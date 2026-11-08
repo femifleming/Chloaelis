@@ -1,0 +1,15 @@
+# build output
+build/
+cmake-build-*/
+out/
+
+# local material that isn't part of the project
+*.wav
+zen-bound-images/
+score/
+
+# OS / editor clutter
+.DS_Store
+.vscode/
+.idea/
+*.swp
