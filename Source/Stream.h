@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <algorithm>
 
 // The built-in recording, streamed. A background thread decodes the compressed file, loops
 // it (with an equal-power crossfade across the seam) and resamples it to the host rate into
@@ -17,10 +18,10 @@ namespace chl
             if (reader == nullptr) return;
             const double fsr = reader->sampleRate;
             const auto len = reader->lengthInSamples - 4096;          // skip the encoder's padding at the end
-            loopEnd   = juce::jlimit<juce::int64> (1, len, (juce::int64) (endSec < 0 ? (double) len : endSec * fsr));
+            loopEnd   = std::clamp<juce::int64> ((juce::int64) (endSec < 0 ? (double) len : endSec * fsr), 1, len);
             xfade     = (juce::int64) (fadeSec * fsr);
-            loopStart = juce::jlimit<juce::int64> (xfade, loopEnd - xfade - 1, (juce::int64) (startSec * fsr));
-            first     = juce::jlimit<juce::int64> (0, loopEnd - xfade - 1, (juce::int64) (firstSec * fsr));
+            loopStart = std::clamp<juce::int64> ((juce::int64) (startSec * fsr), xfade, loopEnd - xfade - 1);
+            first     = std::clamp<juce::int64> ((juce::int64) (firstSec * fsr), 0, loopEnd - xfade - 1);
         }
 
         // not on the audio thread, and only while the stream is off the background thread
@@ -120,7 +121,7 @@ namespace chl
                 const auto fadeStart = loopEnd - xfade;
                 if (pos < fadeStart)
                 {
-                    const int m = (int) juce::jmin<juce::int64> (k - done, juce::jmin<juce::int64> (rawCap, fadeStart - pos));
+                    const int m = (int) std::min<juce::int64> (k - done, std::min<juce::int64> (rawCap, fadeStart - pos));
                     readRaw (raw1, pos, m);
                     std::memcpy (l + done, raw1.getReadPointer (0), sizeof (float) * (size_t) m);
                     std::memcpy (r + done, raw1.getReadPointer (1), sizeof (float) * (size_t) m);
@@ -128,12 +129,12 @@ namespace chl
                 }
                 else
                 {
-                    const int m = (int) juce::jmin<juce::int64> (k - done, juce::jmin<juce::int64> (rawCap, loopEnd - pos));
+                    const int m = (int) std::min<juce::int64> (k - done, std::min<juce::int64> (rawCap, loopEnd - pos));
                     readRaw (raw1, pos, m);
                     readRaw (raw2, loopStart - (loopEnd - pos), m);
                     for (int i = 0; i < m; ++i)
                     {
-                        const double t = (double) (pos + i - fadeStart) / (double) juce::jmax<juce::int64> (1, xfade);
+                        const double t = (double) (pos + i - fadeStart) / (double) std::max<juce::int64> (1, xfade);
                         const float a = (float) std::cos (t * juce::MathConstants<double>::halfPi);
                         const float b = (float) std::sin (t * juce::MathConstants<double>::halfPi);
                         l[done + i] = raw1.getSample (0, i) * a + raw2.getSample (0, i) * b;

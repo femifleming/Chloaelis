@@ -244,9 +244,9 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
             b = jmax (b, jmin ((double) (N - 2), a + 0.05 * vesselCur->rate));
             const double xf = jmax (1.0, jmin (0.02 * vesselCur->rate, (b - a) * 0.25));
             if (vesselPhase < a || vesselPhase >= b) vesselPhase = a;
-            const float target = vesselLevel.load() * vesselLevel.load();
+            const float vesselTarget = vesselLevel.load() * vesselLevel.load();
             const float g0 = vesselGain;
-            vesselGain += (target - vesselGain) * lvlCoef;
+            vesselGain += (vesselTarget - vesselGain) * lvlCoef;
             auto at = [&] (int ch, double x)
             {
                 const int i = jlimit (0, N - 2, (int) x);
@@ -386,7 +386,7 @@ bool ChloaelisProcessor::loadVesselFile (const File& f, bool keepLoop)
     auto clip = std::make_shared<VesselClip>();
     clip->rate = r->sampleRate;
     clip->name = f.getFileNameWithoutExtension();
-    const int n = (int) jmin<int64> (r->lengthInSamples, (int64) (r->sampleRate * 600.0));   // up to 10 minutes
+    const int n = (int) std::min<int64> (r->lengthInSamples, (int64) (r->sampleRate * 600.0));   // up to 10 minutes
     clip->audio.setSize (2, n);
     r->read (&clip->audio, 0, n, 0, true, true);
     if (r->numChannels == 1) clip->audio.copyFrom (1, 0, clip->audio, 0, 0, n);

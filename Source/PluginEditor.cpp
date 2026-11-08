@@ -2468,8 +2468,8 @@ ChloaelisEditor::ChloaelisEditor (ChloaelisProcessor& p)
     else
     {
         setResizeLimits (designW / 2, designH / 2, designW * 2, designH * 2);
-        if (auto* c = getConstrainer())
-            c->setFixedAspectRatio ((double) designW / (double) designH);
+        if (auto* cons = getConstrainer())
+            cons->setFixedAspectRatio ((double) designW / (double) designH);
     }
     setSize (designW, designH);
     gl.setComponentPaintingEnabled (true);
