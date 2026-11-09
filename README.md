@@ -4,7 +4,8 @@
 
 <p align="center">
 A dual-channel filter, tube and delay instrument with a Lorenz attractor, a flock of boids,<br>
-and two field recordings built in. Plug-in (AU / VST3 / LV2) and desktop app, for macOS, Windows and Linux.
+and two field recordings built in. Plug-in (AU / VST3 / LV2) and desktop app, for macOS, Windows and Linux.<br>
+<i>Inspired by the 2012 game <b>Splice</b> and the <b>Chloe</b> Eurorack module by Bizarre Jezabel.</i>
 </p>
 
 ![Chloaelis](docs/screenshot.png)
@@ -274,6 +275,7 @@ audio checks).
 
 - Design and recordings: **Femi Fleming**. The two built-in recordings are Femi Fleming's
   field recordings (*baserecording1* and *hydrophone, June 2026, 3*).
+- Inspired by the 2012 game *Splice* and the *Chloe* Eurorack module by Bizarre Jezabel.
 - Built with [JUCE](https://juce.com) 9.0.5, used under the GNU AGPLv3.
 - Interface font: [Nunito](https://github.com/googlefonts/nunito) (a bold cut), SIL Open
   Font License 1.1 (see `Resources/fonts/OFL-Nunito.txt`).
