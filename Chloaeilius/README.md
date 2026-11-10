@@ -70,3 +70,8 @@ cmake --build build-chloaeilius --config Release --target Chloaeilius_All
 It appears in your DAW as **Chloaeilius** under **Chloaelis**. The tests are `ChloaeiliusTest`, `ChloaeiliusSpatialTest` (where the sound lands, every channel against AmbiX, CPU) and `ChloaeiliusHostTest` (`SPACE_SHOTS=<folder>` saves every view of the sphere).
 
 Everything else (the controls, the delay engines, the tube, the help) works as in Chloaelis: see [its README](../README.md#how-to-use-it).
+
+
+## Human contributions
+
+Chloaeilius was written with Claude Code (Anthropic) under the direction of its author, [femifleming](https://github.com/femifleming). It is the spatial version of Chloaelis. The idea, the references (Bizarre Jezabel's *Chloe* and the game *Splice*), the look and the field recordings all come from the author's work on Chloaelis: see [Human contributions](../README.md#human-contributions) in its README.

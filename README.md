@@ -31,6 +31,7 @@ and two field recordings built in. Plug-in (AU / VST3 / LV2) and desktop app, fo
   - [The desktop app](#the-desktop-app)
   - [Help inside the app](#help-inside-the-app)
 - [Build from source](#build-from-source)
+- [Human contributions](#human-contributions)
 - [Credits and licence](#credits-and-licence)
 
 **[The manual (PDF)](docs/manual/Chloaelis%20Manual.pdf)**: everything here plus a reference for every parameter and answers to common problems.
@@ -276,6 +277,35 @@ DSP checks) and `ChloaelisHostTest` (the full plug-in, headless; `CHL_AUDIOTEST=
 audio checks).
 
 ---
+
+## Human contributions
+
+Chloaelis's code was written with Claude Code (Anthropic), working under the direction of its author, [femifleming](https://github.com/femifleming). This is what the author brought to it:
+
+- **The concept and the signal path.** Two of Bizarre Jezabel's *Chloe* Eurorack modules, hard-panned left and right, each running filter > tube distortion > PT2399 delay. Includes a buffer freeze, with the PT2399's artefacts kept in.
+- **The name.** Chloaelis was its own plug-in from the start, separate from the author's other plug-ins.
+- **The three delay engines and their sound references.** Tape, PT2399 and BBD. The tape has hiss, about 2 % warble, wear that builds as it runs and a refresh button, after clippingrainbirds.world, William Basinski, Ian William Craig and Amulets. The BBD is crunchy, like the Serge delay.
+- **The modulation ideas.**
+  - A Lorenz attractor with one output to each cutoff.
+  - Random freeze.
+  - Slew vs fade time changes.
+  - A delay/filter order switch.
+  - Poly taps: offset copies, up to 8 per side.
+  - A boids "flock" knob for tap chaos.
+  - Crossed master feedback.
+- **What was cut.** The vactrol/LPG/VCA section, the per-parameter LFOs, the VU meters (colour shows level instead), the black pop-ups and the background text. Tube types came back with the original as the default, and every switch crossfades instead of cutting.
+- **The visual direction.** It comes from the 2012 game *Splice*: a network of cells, dark glow, grain, bokeh and a tilt-shift focus that follows the cursor. The author toned the perspective down several times and turned down other looks along the way.
+- **Interface details.**
+  - HUD dials with one thin continuous ring.
+  - Glass capsule cells.
+  - Greek-letter labels instead of text.
+  - Glass vials only for depth, and sliding collars for the cutoffs.
+  - Colour that opens cool and grey and warms with the input.
+  - A plain gradient icon.
+- **The built-in recordings.** Two of the author's own field recordings ship in the plug-in: a base recording and a hydrophone recording.
+- **The desktop app.** The drag-in sample vessel, true fullscreen on Cmd+F, remembering the last state, and a reset button.
+- **Testing.** The author reported lag (and set a 30 fps minimum), pixelation, aliasing in the blur, stepped focus and hover jitter, and had them fixed.
+- **The release.** Builds for macOS, Windows and Linux, a README, in-app help and a Homebrew install, with credit to *Splice* and *Chloe*.
 
 ## Credits and licence
 
