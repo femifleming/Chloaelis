@@ -9,7 +9,7 @@ namespace ambi
 {
 // Listening in the desktop app (the plug-ins don't decode: in a DAW the 16 channels go to a
 // decoder of your choice). The app has no DAW round it, so it can decode for headphones or two
-// speakers itself. These are the decoders tested in Mellyloon's first version.
+// speakers itself. These are the decoders tested in the Balloon Palace's first version.
 //==============================================================================
 // Stereo: the scene heard by two loudspeakers in front of you. Virtual directions all round,
 // each panned by how far left or right it is (constant power), the ones behind a little quieter.
