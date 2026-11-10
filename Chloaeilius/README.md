@@ -23,7 +23,7 @@ Where the sound goes:
 - Each side's **dry sound** is a point: the left side ahead and to the left, the right side ahead and to the right.
 - Each side's **main echo** rides the Lorenz attractor (the right side's mirrored through you), so the delay's repeats loop round you in the butterfly's figure.
 - Each of the **seven poly taps** per side rides one bird of the flock, now flying in three dimensions round you. A feedback trail comes back from wherever its bird has flown, so repeats drift through the room, and the birds gather and scatter round you rather than to one side.
-- **Distance**, after the IEM RoomEncoder: every point has its own propagation delay (so echoes flying towards you or away bend in pitch), 1/r level, a little air absorption and first-order reflections from the walls of a room round you. The **Distance** knob (lambda) sets how far out they fly, from beside you to 12 m.
+- **Distance**, after the IEM RoomEncoder: every point has its own propagation delay (so echoes flying towards you or away bend in pitch), 1/r level, a little air absorption and first-order reflections from the walls of a room round you. The **Distance** knob (lambda) is the size of the bubble you're in, from 1.5 m to 24 m: in a small bubble everything is close and loud and the room answers quickly; in a big one everything is far, quieter, later and roomier.
 - With the order on *delay > filter*, the dry sound goes through the tube and filter as before and each tap through its own filter (the taps skip the tube there, so they stay apart).
 
 **Space View**, the switch under the title, shows the sphere four ways (the sound is the same in all of them):
@@ -33,7 +33,7 @@ Where the sound goes:
 | **Lorenz**: the attractor alone, as in Chloaelis | ![Lorenz](docs/views/chloaeilius_view_lorenz.png) |
 | **Orrery**: a dotted globe round you, turning slowly and leaning with the cursor; every point flies inside it with its trail, and the loud places glow on its skin | ![Orrery](docs/views/chloaeilius_view_orrery.png) |
 | **Map**: the whole sphere unrolled (a Hammer projection, as the IEM EnergyVisualizer), ahead in the middle, behind at both edges, with the energy as glowing dust | ![Map](docs/views/chloaeilius_view_map.png) |
-| **Radar**: from above, rings every 2 m, each point on a stalk as tall as it is high, and a ripple wherever an echo lands | ![Radar](docs/views/chloaeilius_view_radar.png) |
+| **Radar**: from above, rings in metres out to the bubble's edge, each point on a stalk as tall as it is high, and a ripple wherever an echo lands | ![Radar](docs/views/chloaeilius_view_radar.png) |
 
 **The sphere button** (the circle under **?** in the top right) opens a big sphere over the whole window, with nothing in the way: drag to turn it, scroll to zoom, double-click to set it straight, and switch between globe, map and radar along the top. Every point is named (L DRY, L ECHO, L1 to L7 for the taps, and the same for R), and the loud places glow on the glass.
 

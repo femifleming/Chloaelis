@@ -161,6 +161,48 @@ int main (int argc, char** argv)
         check (moved > 0.05f, "the echoes fly (the flock and the attractor move them)", "furthest move in 2 s " + String (moved, 2));
     }
 
+    std::printf ("gain staging (stereo noise in at -18 dBFS per channel, uncorrelated; W out)\n");
+    {
+        Random gr (9);
+        const float amp = 0.125f * std::sqrt (3.0f);
+        auto noise18 = [&] (int) { return std::pair<float, float> { (gr.nextFloat() * 2.0f - 1.0f) * amp, (gr.nextFloat() * 2.0f - 1.0f) * amp }; };
+        auto rmsFrom = [] (const std::vector<float>& x, size_t from) { double s2 = 0; for (size_t i = from; i < x.size(); ++i) s2 += (double) x[i] * x[i]; return std::sqrt (s2 / (double) std::max<size_t> (1, x.size() - from)); };
+        const double inDb = db (amp / std::sqrt (3.0));
+        double dryDb = 0;
+        auto measure = [&] (const char* what, std::function<void (ChloaelisProcessor&)> setup, double lo, double hi, bool relToDry)
+        {
+            ChloaelisProcessor p;
+            setup (p);
+            auto r = render (p, 5.0, noise18);
+            const double w = db (rmsFrom (r.out[0], (size_t) (2 * SR)));
+            float pk = 0; for (size_t i = (size_t) (2 * SR); i < r.out[0].size(); ++i) pk = std::max (pk, std::abs (r.out[0][i]));
+            const double rel = w - (relToDry ? dryDb : inDb);
+            std::printf ("    %-40s W %6.1f dBFS  (%+5.1f dB vs %s)  peak %6.1f dBFS\n", what, w, rel, relToDry ? "dry" : "input", db (pk));
+            check (r.finite && rel >= lo && rel <= hi, (String ("  levels: ") + what).toRawUTF8());
+            return w;
+        };
+        auto wet = [] (ChloaelisProcessor& p, float v) { for (int s = 0; s < 2; ++s) set (p, chl::pid (s, chl::wet), v); };
+        measure ("dry, tube off (the spatial side alone)", [&] (ChloaelisProcessor& p) { wet (p, 0.0f); for (int s = 0; s < 2; ++s) set (p, chl::tubeOnId (s), 0.0f); }, -2.0, 2.0, false);
+        // (with the tube on, as Chloaelis starts, its 12AX7 at the default drive adds about 3 dB, as it does in Chloaelis)
+        dryDb = measure ("dry (echoes off, tube on)", [&] (ChloaelisProcessor& p) { wet (p, 0.0f); }, -2.0, 4.0, false);
+        measure ("defaults (wet 35 %, poly off)", [] (ChloaelisProcessor&) {}, -3.0, 3.0, true);
+        measure ("echoes alone (wet 100 %)", [&] (ChloaelisProcessor& p) { wet (p, 1.0f); }, -6.0, 3.0, true);
+        measure ("poly all the way (8 taps a side), wet 60 %", [&] (ChloaelisProcessor& p) { wet (p, 0.6f); set (p, chl::widthId, 1.0f); }, -4.0, 3.0, true);
+        measure ("poly + flock, wet 100 %", [&] (ChloaelisProcessor& p) { wet (p, 1.0f); set (p, chl::widthId, 1.0f); set (p, chl::flockId, 1.0f); }, -6.0, 3.0, true);
+        measure ("small bubble (1.5 m)", [&] (ChloaelisProcessor& p) { set (p, chl::spaceId, 0.0f); }, 2.0, 12.0, true);
+        measure ("big bubble (24 m)", [&] (ChloaelisProcessor& p) { set (p, chl::spaceId, 1.0f); }, -18.0, -3.0, true);
+        {
+            ChloaelisProcessor p;
+            auto r = render (p, 3.0, noise18);
+            check (p.levelerGainNow() > 0.999f && p.limiterGainNow() > 0.999f, "  levels: at -18 dBFS the leveler and limiter stay out of it");
+            for (int s = 0; s < 2; ++s) set (p, chl::pid (s, chl::inAtt), 12.0f);
+            set (p, chl::spaceId, 0.0f);
+            r = render (p, 3.0, noise18);
+            float pk = 0; for (auto& ch : r.out) for (auto x : ch) pk = std::max (pk, std::abs (x));
+            check (pk <= 0.892f, "  levels: +12 dB in, smallest bubble: still under -1 dBFS", "peak " + String (db (pk), 2) + " dBFS");
+        }
+    }
+
     std::printf ("demo render (16 channels, for an IEM decoder) in %s\n", outDir.getFullPathName().toRawUTF8());
     {
         ChloaelisProcessor p;

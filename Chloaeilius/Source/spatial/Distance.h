@@ -11,21 +11,22 @@ namespace fp
 // with its own
 //   * delay: its length / 343 m/s, read with Hermite interpolation and glided across each block,
 //     so a thing flying towards you or away bends in pitch (Doppler) as it would,
-//   * level: 1 / distance (as RoomEncoder), here referred to half the sphere's radius, so a sound
-//     halfway out is at unity, at the glass -6 dB, near you louder (up to +12 dB), and each wall
-//     takes another 9 dB off,
+//   * level: 1 / distance (as RoomEncoder), unity at 4 m: inside a small bubble everything is near
+//     and loud, inside a big one far and quiet (1.5 m: about +8 dB, 24 m: about -14 dB at the edge),
+//     never more than +12 dB, and each wall takes another 9 dB off,
 //   * colour: air takes a little of the highs off with distance (a one-pole lowpass falling from
 //     20 kHz near you to about 16 kHz at 6 m and 9 kHz at 30 m), and each wall takes some more (RoomEncoder's shelves do this per
 //     reflection order),
 //   * direction: the direct path through ambi::encodeNear (so inside a metre or so it spreads round
 //     your head), the reflections as plane waves from their image sources.
-// Positions come in as fractions of the sphere's radius (|p| <= 1); radiusM says how many metres
-// that is. The room's walls stand just outside the sphere; the listener is at its centre.
+// Positions come in as fractions of the bubble's radius (|p| <= 1); radiusM says how many metres
+// that is (the Distance knob: the size of the bubble you're in). The room's walls stand just outside the sphere; the listener is at its centre.
 class DistanceSource
 {
 public:
     static constexpr int kTaps = 7;   // direct + 6 walls
     static inline bool withWalls = true;   // (a test turns the walls off to check the direct path alone)
+    static constexpr float refMetres = 4.0f;   // at 4 m a sound is at unity; nearer louder (up to +12 dB), further quieter (1 / distance)
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -52,7 +53,7 @@ public:
                                         {  2 * H - s.x, s.y, s.z }, { -2 * H - s.x, s.y, s.z },
                                         { s.x,  2 * H - s.y, s.z }, { s.x, -2 * H - s.y, s.z },
                                         { s.x, s.y,  2 * H - s.z }, { s.x, s.y, -2 * H - s.z } };
-        const float ref = std::max (0.5f, 0.5f * radiusM);
+        const float ref = refMetres;   // a fixed reference: the same sound is louder in a small bubble than a big one
         const float inv = 1.0f / (float) n;
         for (int k = 0; k < (withWalls ? kTaps : 1); ++k)
         {

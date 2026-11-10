@@ -28,7 +28,7 @@ namespace chl
     inline const juce::String lzSpeedId = "lz_speed", lzChaosId = "lz_chaos", lzShapeId = "lz_shape", lzDepthId = "lz_depth",
                               widthId = "width", orderId = "order",
                               srcSelId = "src_sel", srcLevelId = "src_level", masterFbId = "master_fb", flockId = "poly_flock",
-                              spaceId = "space",   // how far out the echoes fly (the sphere's distance)
+                              spaceId = "space",   // the size of the bubble the echoes fly in (1.5 m .. 24 m)
                               viewId = "space_view";   // how the sphere is shown (no effect on the sound)
 
     inline bool isLfoRate (int p) { return p == lmRate || p == ltRate || p == ldRate; }
@@ -134,7 +134,7 @@ namespace chl
         g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { srcLevelId, 1 }, "Source Level", NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.0f, pct));
         g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { masterFbId, 1 }, "Master Feedback", NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.0f, pct));
         g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { spaceId, 1 }, "Distance", NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.6f,
-            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (v * 12.0f, 1) + " m"; })));
+            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (1.5f * std::pow (16.0f, v), 1) + " m"; })));
         g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { viewId, 1 }, "Space View", StringArray { "Lorenz", "Orrery", "Map", "Radar" }, 1));
         layout.add (std::move (g));
 

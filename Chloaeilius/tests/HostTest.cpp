@@ -290,20 +290,24 @@ int main (int argc, char** argv)
         p.apvts.getParameter (chl::lzSpeedId)->setValueNotifyingHost (0.7f);
         p.apvts.getParameter (chl::pid (0, chl::lmDepth))->setValueNotifyingHost (0.4f);
         p.apvts.getParameter (chl::widthId)->setValueNotifyingHost (0.5f);
-        DocumentWindow win ("Chloaelis fps", Colours::black, 0);
+        p.setPlayConfigDetails (2, 16, 48000, 512);
+        p.prepareToPlay (48000, 512);
+        p.apvts.getParameter (chl::flockId)->setValueNotifyingHost (0.8f);
+        p.apvts.getParameter (chl::widthId)->setValueNotifyingHost (1.0f);
+        DocumentWindow win ("Chloaeilius fps", Colours::black, 0);
         win.setUsingNativeTitleBar (true);
         auto* ed = dynamic_cast<ChloaelisEditor*> (p.createEditorAndMakeActive());
         win.setContentOwned (ed, true);
         win.setVisible (true);
         win.toFront (true);
-        AudioBuffer<float> buf (2, 512); MidiBuffer m;
+        AudioBuffer<float> buf (16, 512); MidiBuffer m;
         int blk = 0;
         auto run = [&] (bool sweep, const char* what)
         {
             MessageManager::getInstance()->runDispatchLoopUntil (600);   // settle
             const int f0 = chloaelisDbgFrames;
             const double t0 = Time::getMillisecondCounterHiRes();
-            while (Time::getMillisecondCounterHiRes() - t0 < 5000.0)
+            while (Time::getMillisecondCounterHiRes() - t0 < 3000.0)
             {
                 const double el = (Time::getMillisecondCounterHiRes() - t0) * 0.001;
                 ed->holdFocusForTest (sweep ? 410.0f + 380.0f * (float) std::sin (el * 2.0) : -1.0f);
@@ -318,10 +322,26 @@ int main (int argc, char** argv)
             std::printf ("live fps (%s): %.1f\n", what, fps);
             return fps;
         };
-        const double a = run (false, "focus resting"), b = run (true, "focus sweeping");
+        // the views behind the knobs share the frame with the room's depth-of-field blur (Chloaelis itself
+        // measures 34 to 41 here); the big sphere, alone on screen, should be smooth
+        double worstRoom = 1e9, worstBig = 1e9;
+        static const char* views[] = { "lorenz view", "orrery view", "map view", "radar view" };
+        for (int v = 0; v < 4; ++v)
+        {
+            p.apvts.getParameter (chl::viewId)->setValueNotifyingHost ((float) v / 3.0f);
+            worstRoom = jmin (worstRoom, run (v == 1, views[v]));
+        }
+        for (int v = 1; v <= 3; ++v)
+        {
+            ed->showSphereForTest (v, 0.4f * (float) v, 0.2f);
+            static const char* big[] = { "", "big sphere: globe", "big sphere: map", "big sphere: radar" };
+            worstBig = jmin (worstBig, run (false, big[v]));
+        }
+        ed->showSphereForTest (0);
         win.clearContentComponent();
-        std::printf (a >= 30.0 && b >= 30.0 ? "LIVE FPS OK\n" : "LIVE FPS TOO LOW\n");
-        return (a >= 30.0 && b >= 30.0) ? 0 : 1;
+        const bool ok = worstRoom >= 27.0 && worstBig >= 50.0;
+        std::printf ("%s (room views worst %.1f, big sphere worst %.1f)\n", ok ? "LIVE FPS OK" : "LIVE FPS TOO LOW", worstRoom, worstBig);
+        return ok ? 0 : 1;
     }
 
     for (double sr : { 44100.0, 48000.0, 96000.0, 192000.0 })

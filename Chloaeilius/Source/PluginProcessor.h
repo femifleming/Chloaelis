@@ -4,6 +4,7 @@
 #include "DSP.h"
 #include "Stream.h"
 #include "spatial/Distance.h"
+#include "spatial/Limiter.h"
 
 class ChloaelisProcessor : public juce::AudioProcessor
 {
@@ -50,11 +51,15 @@ public:
     // attractor and each of its seven poly taps rides one bird of the flock, in three dimensions.
     // Out comes 3rd-order Ambisonics (16 channels, ACN / SN3D).
     static constexpr int kPoints = 9;              // per side: 0 dry, 1 main echo, 2..8 the poly taps
-    static constexpr float sphereMetres = 12.0f;   // distance 1 is this far away
+    // the Distance knob is the size of the bubble you're in: its radius, 1.5 m (close and loud) to 24 m (far and quiet)
+    static float bubbleMetres (float knob) noexcept { return 1.5f * std::pow (16.0f, juce::jlimit (0.0f, 1.0f, knob)); }
+    std::atomic<float> bubbleNow { 7.9f };
     struct PointView { std::atomic<float> x { 0 }, y { 0 }, z { 0 }, level { 0 }; };
     std::array<std::array<PointView, kPoints>, chl::numSides> points;
     fp::ambi::EnergyMeter energy;
     std::atomic<int> outChannels { 16 };
+    float limiterGainNow() const noexcept { return limiter.getGain(); }
+    float levelerGainNow() const noexcept { return leveler.getGain(); }
     static fp::ambi::Vec3 lorenzPoint (float x, float y, float z, int side) noexcept;
 
     // written by the UI
@@ -106,6 +111,8 @@ private:
     float lzN[3] { 0, 0, 0 };                      // the attractor, normalised (-1..1)
     fp::DistanceSource dist[chl::numSides][kPoints];
     juce::AudioBuffer<float> parts, bus;            // each point's sound for the block; the 16 channels
+    fp::MultiLeveler leveler;                       // the 16 channels together: a gentle leveler, then a look-ahead limiter at -1 dBFS
+    fp::MultiLimiter limiter;
     std::array<fp::ambi::Vec3, chl::numSides * kPoints> where {};
     float flockCur = 0.0f;
     std::atomic<float>* pLzSpeed = nullptr, *pLzChaos = nullptr, *pLzShape = nullptr, *pLzDepth = nullptr, *pWidth = nullptr, *pOrder = nullptr;

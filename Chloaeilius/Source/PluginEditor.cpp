@@ -1867,6 +1867,70 @@ namespace
         bool labels = false;                             // name the points (the big sphere)
         float ps() const noexcept { return R / 236.0f; } // how big the points are drawn
 
+        // Speed: all the dust (the globe's dots, the trails, the heat) is stamped straight into one image
+        // a frame, as the Lorenz hologram's is, instead of thousands of little shapes for the renderer;
+        // only the glows, rays, rings and words are drawn as vectors on top
+        int pass = 1;                                    // 0: the dust, into the image; 1: the vectors
+        bool vec() const noexcept { return pass == 1; }
+        Image layer;
+        std::unique_ptr<Image::BitmapData> bits;
+        Rectangle<float> region;
+        float hs = 1.0f, hsNext = 1.0f, hsCap = 1.0f;   // (behind the knobs one pixel per point is plenty; the big sphere draws finer)
+        void splat (Point<float> p, float r, Colour c) noexcept
+        {
+            if (bits == nullptr) return;
+            float op = c.getFloatAlpha();
+            float rp = r * hs;
+            if (rp < 1.2f) { op *= (rp * rp) / 1.44f; rp = 1.2f; }
+            if (op <= 0.004f) return;
+            const float px = (p.x - region.getX()) * hs, py = (p.y - region.getY()) * hs, inv = 1.0f / rp;
+            const int x0 = jmax (0, (int) (px - rp)), x1 = jmin (bits->width - 1, (int) (px + rp) + 1);
+            const int y0 = jmax (0, (int) (py - rp)), y1 = jmin (bits->height - 1, (int) (py + rp) + 1);
+            if (x0 > x1 || y0 > y1) return;
+            const PixelARGB base (c.withAlpha (1.0f).getPixelARGB());
+            const float o255 = jmin (1.0f, op) * 255.0f;
+            for (int y = y0; y <= y1; ++y)
+            {
+                const float dy = ((float) y + 0.5f - py) * inv;
+                auto* q = reinterpret_cast<PixelARGB*> (bits->getLinePointer (y)) + x0;
+                for (int x = x0; x <= x1; ++x, ++q)
+                {
+                    const float dx = ((float) x + 0.5f - px) * inv, d2 = dx * dx + dy * dy;
+                    if (d2 >= 1.0f) continue;
+                    const int al = (int) (o255 * (1.0f - std::sqrt (d2)));
+                    if (al <= 0) continue;
+                    PixelARGB src (base);
+                    src.multiplyAlpha (jmin (al, 255));
+                    q->blend (src);
+                }
+            }
+        }
+        void render()
+        {
+            if (mode == 0 || count == 0) return;
+            hs = hsNext;
+            const float halfW = mode == 2 ? 1.62f * R : 1.45f * R, halfH = 1.3f * R;
+            region = Rectangle<float> (cx - halfW, cy - halfH, 2.0f * halfW, 2.0f * halfH).getIntersection (getLocalBounds().toFloat());
+            const int iw = jmax (1, roundToInt (region.getWidth() * hs)), ih = jmax (1, roundToInt (region.getHeight() * hs));
+            if (layer.getWidth() != iw || layer.getHeight() != ih)
+            {
+                layer = Image (Image::ARGB, iw, ih, true, SoftwareImageType());
+                layer.setBackupEnabled (false);
+            }
+            layer.clear (layer.getBounds());
+            {
+                bits = std::make_unique<Image::BitmapData> (layer, Image::BitmapData::readWrite);
+                pass = 0;
+                static Image dummy (Image::ARGB, 1, 1, true);
+                Graphics dg (dummy);
+                if (mode == 1) paintOrrery (dg);
+                else if (mode == 2) paintMap (dg);
+                else paintRadar (dg);
+                pass = 1;
+                bits.reset();
+            }
+        }
+
         explicit SpaceView (ChloaelisProcessor& p) : proc (p)
         {
             setInterceptsMouseClicks (false, false);
@@ -1881,8 +1945,7 @@ namespace
                 {
                     const auto& v = proc.points[(size_t) s][(size_t) j];
                     // (shown as fractions of the current distance, so the picture is always filled; the radar keeps metres)
-                    const float k = mode == 3 ? 1.0f : 1.0f / jlimit (0.05f, 1.0f, proc.apvts.getRawParameterValue (chl::spaceId)->load());
-                    trail[s][j][head] = fp::ambi::Vec3 { v.x.load (std::memory_order_relaxed), v.y.load (std::memory_order_relaxed), v.z.load (std::memory_order_relaxed) } * k;
+                    trail[s][j][head] = fp::ambi::Vec3 { v.x.load (std::memory_order_relaxed), v.y.load (std::memory_order_relaxed), v.z.load (std::memory_order_relaxed) };
                     const float l = v.level.load (std::memory_order_relaxed);
                     // an echo landing: its level jumps
                     if (mode == 3 && l > 0.02f && l > lastLevel[s][j] * 1.8f && ripples.size() < 60)
@@ -1902,6 +1965,7 @@ namespace
                 for (size_t i = 0; i < skin.size(); ++i) { skinDb[i] = 10.0f * std::log10 (proc.energy.levelAt (skin[i]) + 1.0e-12f); top = jmax (top, skinDb[i]); }
                 for (auto& d : skinDb) d -= jmax (top, -70.0f);
             }
+            render();
         }
 
         // ---- the three projections ------------------------------------------------------
@@ -1928,7 +1992,7 @@ namespace
         // radar: from above, ahead up the screen, left to the left
         Point<float> radarGround (fp::ambi::Vec3 w) const { return { cx - w.y * R, cy + 40.0f - w.x * R }; }
 
-        void dust (Graphics& g, Point<float> p, float r, Colour c) const { g.setColour (c); g.fillEllipse (p.x - r, p.y - r, 2.0f * r, 2.0f * r); }
+        void dust (Graphics&, Point<float> p, float r, Colour c) { if (pass == 0) splat (p, r, c); }
 
         static Colour heatOf (int side, float rel)   // rel: dB below the loudest place
         {
@@ -1938,9 +2002,17 @@ namespace
 
         void paint (Graphics& g) override
         {
+            hsNext = jlimit (0.75f, hsCap, std::ceil (g.getInternalContext().getPhysicalPixelScaleFactor() * 4.0f) / 4.0f);
             if (mode == 0 || count == 0) return;
             Graphics::ScopedSaveState ss (g);
             g.addTransform (AffineTransform::translation (parallax));
+            if (layer.isValid())
+            {
+                g.setOpacity (1.0f);
+                g.drawImageTransformed (layer, AffineTransform::scale (region.getWidth() / (float) layer.getWidth(), region.getHeight() / (float) layer.getHeight())
+                                                   .translated (region.getX(), region.getY()), false);
+            }
+            pass = 1;
             if (mode == 1) paintOrrery (g);
             else if (mode == 2) paintMap (g);
             else paintRadar (g);
@@ -1960,6 +2032,7 @@ namespace
                             const auto p = proj (trail[s][j][(head + hist - count + k) % hist], nr);
                             dust (g, p, 0.9f + 2.0f * age * (0.6f + 0.4f * (nr + 1.0f) * 0.5f), c.withAlpha (0.08f + 0.5f * age * age));
                         }
+                    if (! vec()) continue;
                     float nr;
                     const auto p = proj (trail[s][j][(head + hist - 1) % hist], nr);
                     const float nn = (nr + 1.0f) * 0.5f;
@@ -1983,12 +2056,15 @@ namespace
                     const float size = (j == 1 ? 13.0f : 8.0f) * (0.7f + 0.6f * nn) * k;
                     drawGlow (g, glow[s], p, size * (1.6f + 2.4f * level[s][j]), c.withAlpha (0.45f + 0.55f * level[s][j]));
                     g.setOpacity (1.0f);
-                    dust (g, p, j == 1 ? 4.2f : 2.6f, white.withAlpha (0.75f + 0.25f * nn));
+                    g.setColour (white.withAlpha (0.75f + 0.25f * nn));
+                    const float hr = j == 1 ? 4.2f : 2.6f;
+                    g.fillEllipse (p.x - hr, p.y - hr, 2.0f * hr, 2.0f * hr);
                 }
         }
 
         void listener (Graphics& g, Point<float> at, float r, float noseAngle) const
         {
+            if (! vec()) return;
             g.setColour (white.withAlpha (0.85f));
             g.drawEllipse (at.x - r, at.y - r, 2.0f * r, 2.0f * r, 1.4f);
             g.drawLine (at.x, at.y, at.x + std::sin (noseAngle) * (r + 6.0f), at.y - std::cos (noseAngle) * (r + 6.0f), 1.4f);
@@ -2015,23 +2091,21 @@ namespace
                 const float az = (float) k * MathConstants<float>::pi / 6.0f;
                 dottedCurve ([az] (float u) { return fp::ambi::fromAzEl (az, (u - 0.5f) * MathConstants<float>::twoPi); }, steps, 0.22f);
             }
-            // the loud places glow on its skin
-            for (size_t i = 0; i < skin.size(); ++i)
-            {
-                if (skinDb[i] < -10.0f) continue;   // only the loud places
-                float nr;
-                const auto p = orrery (skin[i], nr);
-                // a soft warm glow on the glass where it's loud (heat clouds, not dots)
-                const float hot = (skinDb[i] + 10.0f) / 10.0f;
-                const auto c = pal.accL.interpolatedWith (pal.accR, 0.5f).interpolatedWith (Colour (0xfffff0dc), hot);
-                const float rr = 16.0f * ps();
-                g.setGradientFill (ColourGradient (c.withAlpha (hot * hot * 0.22f * (0.35f + 0.65f * (nr + 1.0f) * 0.5f)), p.x, p.y, c.withAlpha (0.0f), p.x + rr, p.y, true));
-                g.fillEllipse (p.x - rr, p.y - rr, 2.0f * rr, 2.0f * rr);
-            }
+            // the loud places glow on its skin (soft warm heat, stamped with the dust)
+            if (! vec())
+                for (size_t i = 0; i < skin.size(); ++i)
+                {
+                    if (skinDb[i] < -10.0f) continue;   // only the loud places
+                    float nr;
+                    const auto p = orrery (skin[i], nr);
+                    const float hot = (skinDb[i] + 10.0f) / 10.0f;
+                    const auto c = pal.accL.interpolatedWith (pal.accR, 0.5f).interpolatedWith (Colour (0xfffff0dc), hot);
+                    splat (p, 16.0f * ps(), c.withAlpha (hot * hot * 0.22f * (0.35f + 0.65f * (nr + 1.0f) * 0.5f)));
+                }
             // rays from you to the louder points, marching outward like the sends
             float nr0;
             const auto me = orrery ({ 0, 0, 0 }, nr0);
-            for (int s = 0; s < sides; ++s)
+            for (int s = 0; s < (vec() ? sides : 0); ++s)
                 for (int j = 1; j < pts; ++j)
                 {
                     if (level[s][j] < 0.08f) continue;
@@ -2051,6 +2125,7 @@ namespace
             float nr;
             const auto ahead = orrery ({ 0.12f, 0, 0 }, nr);
             listener (g, me, 9.0f * jmin (1.5f, ps()), std::atan2 (ahead.x - me.x, me.y - ahead.y));
+            if (! vec()) return;
             g.setFont (hud (9.0f * jmin (1.4f, ps())));
             for (auto [v, t] : { std::pair { fp::ambi::Vec3 { 1.08f, 0, 0 }, "AHEAD" }, std::pair { fp::ambi::Vec3 { 0, 1.08f, 0 }, "LEFT" },
                                  std::pair { fp::ambi::Vec3 { 0, -1.08f, 0 }, "RIGHT" }, std::pair { fp::ambi::Vec3 { -1.08f, 0, 0 }, "BEHIND" } })
@@ -2067,12 +2142,10 @@ namespace
             // the energy, as dust filling the map
             for (size_t i = 0; i < skin.size(); ++i)
             {
-                if (skinDb[i] < -20.0f) continue;
+                if (vec() || skinDb[i] < -20.0f) continue;
                 const auto p = hammer (skin[i]);
                 const auto c = heatOf (-1, skinDb[i]);
-                const float r = 4.0f + 7.0f * c.getFloatAlpha();
-                g.setGradientFill (ColourGradient (c.withMultipliedAlpha (0.55f), p.x, p.y, c.withAlpha (0.0f), p.x + r, p.y, true));
-                g.fillEllipse (p.x - r, p.y - r, 2.0f * r, 2.0f * r);
+                splat (p, (5.0f + 9.0f * c.getFloatAlpha()) * ps(), c.withMultipliedAlpha (0.55f));
             }
             // its outline, and dotted meridians and parallels
             for (int k = -6; k <= 6; ++k)
@@ -2099,6 +2172,7 @@ namespace
                     }
                 }
             paintPoints (g, [this] (fp::ambi::Vec3 w, float& n) { n = 0.4f; return hammer (w); }, false);
+            if (! vec()) return;
             g.setFont (hud (9.0f));
             g.setColour (white.withAlpha (0.45f));
             for (auto [az, t] : { std::pair { 0.0f, "AHEAD" }, std::pair { 1.5708f, "LEFT" }, std::pair { -1.5708f, "RIGHT" } })
@@ -2110,24 +2184,29 @@ namespace
 
         void paintRadar (Graphics& g)
         {
-            const float space = jlimit (0.05f, 1.0f, proc.apvts.getRawParameterValue (chl::spaceId)->load());
-            const float metres = ChloaelisProcessor::sphereMetres * space;
+            // the bubble's edge is the outer ring; rings at a sensible step inside it, labelled in metres
+            const float metres = proc.bubbleNow.load();
+            const float step = metres <= 3.0f ? 0.5f : metres <= 6.0f ? 1.0f : metres <= 12.0f ? 2.0f : 4.0f;
             const auto me = radarGround ({ 0, 0, 0 });
-            // rings every 2 m, dotted, labelled
             g.setFont (hud (8.5f));
-            for (float m = 2.0f; m <= ChloaelisProcessor::sphereMetres + 0.01f; m += 2.0f)
+            for (float m = step; m <= metres + 0.01f; m += step)
             {
-                const float r = R * m / ChloaelisProcessor::sphereMetres;
+                const float r = R * m / metres;
                 const int steps = (int) (r * 0.9f);
-                const bool inside = m <= metres + 0.01f;
+                const bool inside = true;
                 for (int i = 0; i < steps; ++i)
                 {
                     const float a = (float) i / (float) steps * MathConstants<float>::twoPi;
                     dust (g, { me.x + std::cos (a) * r, me.y + std::sin (a) * r }, 0.7f, pal.mote.withAlpha (inside ? 0.3f : 0.1f));
                 }
+                if (vec())
+                {
                 g.setColour (white.withAlpha (inside ? 0.4f : 0.15f));
-                g.drawText (String ((int) m) + " M", Rectangle<float> (40, 10).withCentre ({ me.x + r * 0.71f + 14.0f, me.y - r * 0.71f }), Justification::centred);
+                g.drawText ((step < 1.0f ? String (m, 1) : String ((int) m)) + " M", Rectangle<float> (40, 10).withCentre ({ me.x + r * 0.71f + 14.0f, me.y - r * 0.71f }), Justification::centred);
+                }
             }
+            if (vec())
+            {
             // crosshair
             Path cross;
             for (float t = 14.0f + std::fmod (march, 9.0f); t < R; t += 9.0f)
@@ -2142,18 +2221,19 @@ namespace
                 g.setColour (acc (r.side).withAlpha (0.55f * (1.0f - u)));
                 g.drawEllipse (r.at.x - rad, r.at.y - rad * 0.6f, 2.0f * rad, 1.2f * rad, 1.2f);
             }
+            }
             // stalks: as tall as the point is high (or deep, below)
             for (int s = 0; s < sides; ++s)
                 for (int j = 0; j < pts; ++j)
                 {
                     const auto w = trail[s][j][(head + hist - 1) % hist];
                     const auto gnd = radarGround (w);
-                    g.setColour (acc (s).withAlpha (0.35f));
-                    g.drawLine (gnd.x, gnd.y, gnd.x, gnd.y - w.z * 90.0f, 1.0f);
+                    if (vec()) { g.setColour (acc (s).withAlpha (0.35f)); g.drawLine (gnd.x, gnd.y, gnd.x, gnd.y - w.z * 90.0f, 1.0f); }
                     dust (g, gnd, 1.6f, acc (s).withAlpha (0.4f));
                 }
             paintPoints (g, [this] (fp::ambi::Vec3 w, float& n) { n = jlimit (-1.0f, 1.0f, w.z); auto p = radarGround (w); return p.translated (0, -w.z * 90.0f); }, true);
             listener (g, me, 9.0f, 0.0f);
+            if (! vec()) return;
             g.setColour (white.withAlpha (0.45f));
             g.drawText ("AHEAD", Rectangle<float> (70, 12).withCentre (me.translated (0, -R - 12.0f)), Justification::centred);
         }
@@ -2174,6 +2254,7 @@ namespace
         {
             view.labels = true;
             view.mode = 1;
+            view.hsCap = 1.5f;
             view.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (view);
             setWantsKeyboardFocus (true);
@@ -2208,7 +2289,7 @@ namespace
             cellFace (g, closeBox(), String::fromUTF8 ("\xc3\x97"), false, false, acc (-1), 13.0f);
             g.setFont (hud (9.0f));
             g.setColour (white.withAlpha (0.5f));
-            g.drawText (String::fromUTF8 (view.mode == 3 ? "SEEN FROM ABOVE  \xc2\xb7  RINGS EVERY 2 M  \xc2\xb7  STALKS SHOW HEIGHT"
+            g.drawText (String::fromUTF8 (view.mode == 3 ? "SEEN FROM ABOVE  \xc2\xb7  RINGS IN METRES TO THE BUBBLE'S EDGE  \xc2\xb7  STALKS SHOW HEIGHT"
                         : view.mode == 2 ? "THE WHOLE SPHERE UNROLLED  \xc2\xb7  AHEAD IN THE MIDDLE, BEHIND AT THE EDGES"
                                          : "DRAG TO TURN  \xc2\xb7  SCROLL TO ZOOM  \xc2\xb7  DOUBLE-CLICK TO SET IT STRAIGHT"),
                         Rectangle<float> (0, H - 46.0f, W, 16.0f), Justification::centred);
@@ -2538,7 +2619,7 @@ namespace
             auto* nDp = knobCell (chl::lzDepthId, -1, { W * 0.5f, 352 }, -0.12f, "Depth", "how far the attractor moves the cutoffs (up to +/- 3.5 octaves)");
             // how the sphere is shown (the picture only: the sound is the same)
             segCell (chl::viewId, { "Lorenz", "Orrery", "Map", "Radar" }, { W * 0.5f, 70 }, 300, "space view: the attractor alone, or the sphere as a globe, a map or from above", -1);
-            auto* nSpace = knobCell (chl::spaceId, -1, { W * 0.5f + 100, 640 }, 0.08f, "Distance", "distance: how far out the echoes fly, from beside you to 12 m away");
+            auto* nSpace = knobCell (chl::spaceId, -1, { W * 0.5f + 100, 640 }, 0.08f, "Distance", "distance: the size of the bubble the echoes fly in, from 1.5 m (close and loud) to 24 m (far, quiet, later)");
             (void) nSpace;
             auto* nOrd = segCell (chl::orderId, { String::fromUTF8 ("Filter \xe2\x80\xba Dly"), String::fromUTF8 ("Dly \xe2\x80\xba Filter") }, { W * 0.5f, 548 }, 190,
                                   "order: filter > tube > delay, or delay > tube > filter", -1);
@@ -2655,6 +2736,12 @@ namespace
         {
             const double t = now();
             ++frame;
+            // the big sphere covers everything: while it's open only it moves (the room behind waits)
+            if (sphere.isVisible())
+            {
+                sphere.advance (1.0f / 60.0f);
+                return;
+            }
             fitBudget = 6;
             blurMsLeft = 4.0;
             // input level -> warmth: quick to warm, slow to cool, like a meter's ballistics
@@ -2812,10 +2899,12 @@ namespace
             bokeh.parallax = { -par.x * 40.0f, -par.y * 26.0f };
             holo.parallax = { -par.x * 22.0f, -par.y * 14.0f };
             holo.camYaw = yaw; holo.camPitch = pitch;
-            holo.advance (1.0f / 60.0f);
+            if (holo.getAlpha() > 0.5f || frame % 4 == 0) holo.advance (holo.getAlpha() > 0.5f ? 1.0f / 60.0f : 4.0f / 60.0f);
             flockView.parallax = { -par.x * 16.0f, -par.y * 10.0f };
-            flockView.advance (1.0f / 60.0f);
-            flockView.repaint();
+            // (layers you can't see don't render: the attractor runs at a quarter rate when it's faint, the 2-D
+            //  flock not at all once it has faded out)
+            if (flockView.getAlpha() > 0.02f) { flockView.advance (1.0f / 60.0f); flockView.repaint(); }
+            if (flockView.isVisible() != (flockView.getAlpha() > 0.02f)) flockView.setVisible (flockView.getAlpha() > 0.02f);
             {
                 const int mode = jlimit (0, 3, (int) std::lround (proc.apvts.getRawParameterValue (chl::viewId)->load()));
                 spaceView.mode = mode;
@@ -2826,7 +2915,6 @@ namespace
                 spaceView.yaw = yaw; spaceView.pitch = pitch;
                 spaceView.advance (1.0f / 60.0f);
                 spaceView.repaint();
-                if (sphere.isVisible()) sphere.advance (1.0f / 60.0f);
             }
 
             // output levels -> colour (fast up, slower down)

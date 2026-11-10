@@ -81,6 +81,8 @@ void ChloaelisProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     parts.setSize (chl::numSides * kPoints, nb, false, true, true);
     bus.setSize (fp::ambi::kCh, nb, false, true, true);
     energy.prepare (sampleRate);
+    leveler.prepare (sampleRate);
+    limiter.prepare (sampleRate);
     for (int s = 0; s < chl::numSides; ++s)
     {
         const float age = voices[s].tapeAge;
@@ -91,7 +93,7 @@ void ChloaelisProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     widthCur = pWidth->load();
     readTargets (cur);
     modulate (cur, 0);
-    setLatencySamples ((int) std::round (voices[0].latency()));
+    setLatencySamples ((int) std::round (voices[0].latency()) + limiter.latency());
 
     for (auto& st : streams)
     {
@@ -338,7 +340,10 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
     // where everything is: the dry sounds front left and front right, the main echoes on the attractor
     // (the right one mirrored through you), the poly taps on their birds; all scaled by distance
     {
-        const float space = jlimit (0.05f, 1.0f, pSpace->load());
+        // positions are fractions of the bubble; the bubble's size (the Distance knob) is in metres
+        const float space = 1.0f;
+        const float bubble = bubbleNow.load() + (bubbleMetres (pSpace->load()) - bubbleNow.load()) * jmin (1.0f, (float) n / (float) (0.15 * sr));
+        bubbleNow.store (bubble);
         for (int s = 0; s < chl::numSides; ++s)
         {
             const float side = s == 0 ? 1.0f : -1.0f;
@@ -360,12 +365,14 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         }
         bus.clear (0, n);
         float* const* bw = bus.getArrayOfWritePointers();
+        // both sides meet in the same channels: each at -3 dB, so the two together come out about as loud as one did
+        parts.applyGain (0, n, 0.70710678f);
         for (int s = 0; s < chl::numSides; ++s)
             for (int j = 0; j < kPoints; ++j)
             {
                 const float* x = parts.getReadPointer (s * kPoints + j);
                 const auto p = where[(size_t) (s * kPoints + j)];
-                dist[s][j].process (x, n, p, sphereMetres, bw, nullptr, 0.0f);
+                dist[s][j].process (x, n, p, bubble, bw, nullptr, 0.0f);
                 auto& pv = points[(size_t) s][(size_t) j];
                 pv.x.store (p.x, std::memory_order_relaxed); pv.y.store (p.y, std::memory_order_relaxed); pv.z.store (p.z, std::memory_order_relaxed);
                 const float lv = parts.getRMSLevel (s * kPoints + j, 0, n);
@@ -374,6 +381,9 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         // (never let a NaN through)
         for (int c = 0; c < fp::ambi::kCh; ++c)
             for (int i = 0; i < n; ++i) if (! std::isfinite (bw[c][i])) bw[c][i] = 0.0f;
+        // the 16 channels, linked: never clips (a small bubble brings everything close and loud)
+        leveler.process (bw, fp::ambi::kCh, n);
+        limiter.process (bw, fp::ambi::kCh, n);
         energy.process (bus.getArrayOfReadPointers(), n);
         outChannels.store (numOut, std::memory_order_relaxed);
         for (int c = 0; c < numOut; ++c)
@@ -515,7 +525,7 @@ AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new ChloaelisProcess
 // the attractor's butterfly, fitted into the sphere; the right side's echo is the left's mirrored through you
 fp::ambi::Vec3 ChloaelisProcessor::lorenzPoint (float x, float y, float z, int side) noexcept
 {
-    fp::ambi::Vec3 p { 0.85f * y, 0.85f * x, 0.6f * z };
+    fp::ambi::Vec3 p { 0.7f * y, 0.7f * x, 0.5f * z };   // (kept a little in from the bubble's edge)
     if (side == 1) p = { -p.x, -p.y, p.z };
     const float l = p.length();
     return l > 1.0f ? p * (1.0f / l) : p;
