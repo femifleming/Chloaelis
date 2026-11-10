@@ -63,8 +63,14 @@ jobs:
           for t in ChloaeiliusTest ChloaeiliusSpatialTest; do
             exe=$(find build -path "*${t}_artefacts*" -type f \( -name "$t" -o -name "$t.exe" \) | head -1)
             echo "== $t: $exe"
+            set +e
             if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a "$exe"; else "$exe"; fi
+            code=$?
+            set -e
+            echo "== $t exit code $code"
+            [ $code -eq 0 ] || fails=$((fails + 1))
           done
+          exit ${fails:-0}
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
