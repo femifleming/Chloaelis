@@ -33,6 +33,8 @@ and two field recordings built in. Plug-in (AU / VST3 / LV2) and desktop app, fo
 - [Build from source](#build-from-source)
 - [Credits and licence](#credits-and-licence)
 
+**[The manual (PDF)](docs/manual/Chloaelis%20Manual.pdf)**: everything here plus a reference for every parameter and answers to common problems.
+
 ---
 
 ## What it is

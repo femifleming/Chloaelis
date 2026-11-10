@@ -28,9 +28,39 @@ static void unsetEnv (const char* k)
    #endif
 }
 
+
+// MANUAL_DUMP=<folder>: every parameter as JSON, for the manual
+static int dumpForManual (const char* dir)
+{
+    const File out (dir);
+    out.createDirectory();
+    ChloaelisProcessor p;
+    Array<var> params;
+    for (auto* ap : p.getParameters())
+        if (auto* r = dynamic_cast<RangedAudioParameter*> (ap))
+        {
+            DynamicObject::Ptr o = new DynamicObject();
+            o->setProperty ("id", r->getParameterID());
+            o->setProperty ("name", r->getName (100));
+            o->setProperty ("default", r->getText (r->getDefaultValue(), 100));
+            o->setProperty ("min", r->getText (0.0f, 100));
+            o->setProperty ("max", r->getText (1.0f, 100));
+            String type = "continuous";
+            if (auto* c = dynamic_cast<AudioParameterChoice*> (r)) { type = "choice"; o->setProperty ("choices", c->choices.joinIntoString (", ")); }
+            else if (dynamic_cast<AudioParameterBool*> (r) != nullptr) type = "switch";
+            else if (dynamic_cast<AudioParameterInt*> (r) != nullptr) type = "steps";
+            o->setProperty ("type", type);
+            params.add (var (o.get()));
+        }
+    out.getChildFile ("params.json").replaceWithText (JSON::toString (var (params)));
+    std::printf ("manual material: %d parameters in %s\n", params.size(), out.getFullPathName().toRawUTF8());
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     ScopedJuceInitialiser_GUI init;
+    if (auto* md = std::getenv ("MANUAL_DUMP")) return dumpForManual (md);
     setEnv ("CHL_NO_LASTSTATE", "1");   // tests start from defaults and never touch the user's saved state
     int fails = 0;
     // SPACE_SHOTS=<folder>: each way of showing the sphere, with the sound running through it

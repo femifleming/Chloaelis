@@ -12,6 +12,8 @@ with its echoes flying round you on the flock and the Lorenz attractor.<br>
 
 ![Chloaeilius](docs/screenshot.png)
 
+**[The manual (PDF)](docs/manual/Chloaeilius%20Manual.pdf)**: the sphere, the desktop app, Chloaelis's controls, every parameter and answers to common problems.
+
 ---
 
 ## The sphere
