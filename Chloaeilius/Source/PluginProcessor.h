@@ -5,6 +5,7 @@
 #include "Stream.h"
 #include "spatial/Distance.h"
 #include "spatial/Limiter.h"
+#include "spatial/Monitor.h"
 
 class ChloaelisProcessor : public juce::AudioProcessor
 {
@@ -75,6 +76,8 @@ public:
         juce::String name;
     };
     bool isStandalone() const { return wrapperType == wrapperType_Standalone; }
+    static inline bool forceDesktop = false;   // (the tests pretend to be the desktop app)
+    bool desktop() const { return isStandalone() || forceDesktop; }   // the vessel, and listening for you
     bool loadVesselFile (const juce::File&, bool keepLoop = false);   // message thread
     std::shared_ptr<const VesselClip> vesselForUi() const { return vesselUi; }
     std::atomic<float> vesselStart { 0.0f }, vesselEnd { 1.0f }, vesselLevel { 0.0f }, vesselPos { 0.0f };
@@ -113,6 +116,11 @@ private:
     juce::AudioBuffer<float> parts, bus;            // each point's sound for the block; the 16 channels
     fp::MultiLeveler leveler;                       // the 16 channels together: a gentle leveler, then a look-ahead limiter at -1 dBFS
     fp::MultiLimiter limiter;
+    // the desktop app only: decoded for headphones or two speakers (the plug-ins always send the 16 channels)
+    fp::ambi::BinauralDecoder binaural;
+    fp::ambi::StereoDecoder stereoDec;
+    juce::AudioBuffer<float> monitor;
+    std::atomic<float>* pListen = nullptr;
     std::array<fp::ambi::Vec3, chl::numSides * kPoints> where {};
     float flockCur = 0.0f;
     std::atomic<float>* pLzSpeed = nullptr, *pLzChaos = nullptr, *pLzShape = nullptr, *pLzDepth = nullptr, *pWidth = nullptr, *pOrder = nullptr;

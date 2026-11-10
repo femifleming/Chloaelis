@@ -94,6 +94,31 @@ int main (int argc, char** argv)
             std::printf ("wrote %s\n", f.getFullPathName().toRawUTF8());
         }
         if (ce != nullptr) ce->showSphereForTest (0);
+        {
+            // the desktop app's layout: the vessel and the listen switch (a fresh instance, as the app starts)
+            ChloaelisProcessor::forceDesktop = true;
+            ChloaelisProcessor pd;
+            pd.setPlayConfigDetails (2, 16, 48000, 512);
+            pd.prepareToPlay (48000, 512);
+            pd.apvts.getParameter (chl::widthId)->setValueNotifyingHost (1.0f);
+            std::unique_ptr<AudioProcessorEditor> de (pd.createEditorAndMakeActive());
+            if (de != nullptr)
+            {
+                de->setSize (ChloaelisEditor::designW, ChloaelisEditor::designH);
+                auto* dce = dynamic_cast<ChloaelisEditor*> (de.get());
+                AudioBuffer<float> b2 (16, 512);
+                for (int k = 0; k < 300; ++k) { b2.clear(); pd.processBlock (b2, m); if (dce != nullptr) dce->advanceFrames (1); }
+                auto img = de->createComponentSnapshot (de->getLocalBounds(), true, 1.0f);
+                auto f = out.getChildFile ("chloaeilius_desktop.png");
+                f.deleteFile();
+                FileOutputStream os (f);
+                PNGImageFormat().writeImageToStream (img, os);
+                std::printf ("wrote %s\n", f.getFullPathName().toRawUTF8());
+            }
+            de.reset();
+            ChloaelisProcessor::forceDesktop = false;
+            ce = nullptr;
+        }
         return 0;
     }
     // live frame rate: a real window on the real (OpenGL) renderer, audio running, the focus

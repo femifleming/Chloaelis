@@ -37,6 +37,7 @@ ChloaelisProcessor::ChloaelisProcessor()
     pMasterFb = apvts.getRawParameterValue (chl::masterFbId);
     pFlock    = apvts.getRawParameterValue (chl::flockId);
     pSpace    = apvts.getRawParameterValue (chl::spaceId);
+    pListen   = apvts.getRawParameterValue (chl::listenId);
     flock.reset();
 
     // the recordings are compiled into the plugin (Ogg Vorbis: decodes the same on every platform)
@@ -83,6 +84,8 @@ void ChloaelisProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     energy.prepare (sampleRate);
     leveler.prepare (sampleRate);
     limiter.prepare (sampleRate);
+    binaural.prepare (sampleRate, nb);
+    monitor.setSize (2, nb, false, true, true);
     for (int s = 0; s < chl::numSides; ++s)
     {
         const float age = voices[s].tapeAge;
@@ -386,9 +389,25 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         limiter.process (bw, fp::ambi::kCh, n);
         energy.process (bus.getArrayOfReadPointers(), n);
         outChannels.store (numOut, std::memory_order_relaxed);
-        for (int c = 0; c < numOut; ++c)
-            if (c < fp::ambi::kCh) buffer.copyFrom (c, 0, bus.getReadPointer (c), n);
-            else buffer.clear (c, 0, n);
+        // the desktop app can listen for you: binaural for headphones or a stereo pair for speakers,
+        // on its first two outputs (16 ch sends the Ambisonics on, for an interface or another app)
+        const int listen = desktop() ? jlimit (0, 2, (int) std::lround (pListen->load())) : 2;
+        if (listen < 2)
+        {
+            if (monitor.getNumSamples() < n) monitor.setSize (2, n, false, true, true);
+            float* L = monitor.getWritePointer (0);
+            float* R = monitor.getWritePointer (1);
+            if (listen == 0) binaural.process (bus.getArrayOfReadPointers(), L, R, n);
+            else stereoDec.process (bus.getArrayOfReadPointers(), L, R, n);
+            for (int i = 0; i < n; ++i) { L[i] = jlimit (-0.98f, 0.98f, L[i]); R[i] = jlimit (-0.98f, 0.98f, R[i]); }
+            for (int c = 0; c < numOut; ++c)
+                if (c < 2) buffer.copyFrom (c, 0, monitor.getReadPointer (c), n);
+                else buffer.clear (c, 0, n);
+        }
+        else
+            for (int c = 0; c < numOut; ++c)
+                if (c < fp::ambi::kCh) buffer.copyFrom (c, 0, bus.getReadPointer (c), n);
+                else buffer.clear (c, 0, n);
     }
 
     for (int i = 0; i < chl::dsp::Flock::n; ++i)

@@ -39,6 +39,21 @@ Where the sound goes:
 
 ![The sphere](docs/views/chloaeilius_sphere_globe.png)
 
+## The desktop app
+
+`Chloaeilius.app` (`Chloaeilius.exe` on Windows, `Chloaeilius` on Linux) is Chloaeilius on its own, with no DAW, and it has Chloaelis's desktop extras:
+
+- **The vessel** (top right): load your own sample. Drop an audio file onto it (WAV, AIFF, FLAC, MP3, M4A, OGG or CAF, up to 10 minutes) or double-click it to choose one. The two rings set the loop, and dragging the glass sets its level. It plays into both sides and its echoes fly round you like everything else.
+- **Listen** (top left), because without a DAW there's nowhere to put a decoder:
+  - **Headphones**: the sphere decoded to binaural (a spherical-head model), on outputs 1 and 2.
+  - **Speakers**: a stereo decode for two loudspeakers.
+  - **16 ch**: the Ambisonics themselves, for a multichannel interface or to route into another app (for example through BlackHole into REAPER and an IEM decoder).
+- **Options** (the audio device and channels), **fullscreen** (cmd+F, esc to leave) and the help, as in Chloaelis.
+
+The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send the 16 channels to your decoder.
+
+![The desktop app](docs/views/chloaeilius_desktop.png)
+
 ## Build it
 
 Chloaeilius isn't released as a download yet. When it is, its releases will be tagged `chloaeilius-v...` on the [Chloaelis Releases page](https://github.com/femifleming/Chloaelis/releases), separate from Chloaelis's own. For now, build it from this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):

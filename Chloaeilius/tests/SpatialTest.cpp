@@ -203,6 +203,43 @@ int main (int argc, char** argv)
         }
     }
 
+    std::printf ("the desktop app: listening, and the vessel\n");
+    {
+        ChloaelisProcessor::forceDesktop = true;
+        // headphones: the left input (echoes off) is in the left ear, louder and first; outputs 3 to 16 silent
+        ChloaelisProcessor p;
+        for (int s = 0; s < 2; ++s) set (p, chl::pid (s, chl::wet), 0.0f);
+        set (p, chl::listenId, 0.0f);
+        auto r = render (p, 2.0, noiseLeft);
+        auto rmsFrom = [] (const std::vector<float>& x, size_t from) { double s2 = 0; for (size_t i = from; i < x.size(); ++i) s2 += (double) x[i] * x[i]; return std::sqrt (s2 / (double) std::max<size_t> (1, x.size() - from)); };
+        const double l = rmsFrom (r.out[0], (size_t) SR), rr = rmsFrom (r.out[1], (size_t) SR);
+        double rest = 0; for (int c = 2; c < 16; ++c) rest = std::max (rest, rmsFrom (r.out[(size_t) c], 0));
+        check (r.finite && db (l / rr) > 3.0 && rest == 0.0, "headphones: the left side is in the left ear, nothing on outputs 3 to 16", String (db (l / rr), 1) + " dB louder left");
+        set (p, chl::listenId, 1.0f);
+        r = render (p, 2.0, noiseLeft);
+        check (r.finite && db (rmsFrom (r.out[0], (size_t) SR) / rmsFrom (r.out[1], (size_t) SR)) > 3.0, "speakers: the left side in the left speaker");
+        set (p, chl::listenId, 2.0f);
+        r = render (p, 2.0, noiseLeft);
+        check (rmsFrom (r.out[3], (size_t) SR) > 1e-4, "16 ch: the Ambisonics go out as they are");
+
+        // the vessel: a file poured in plays through it (with nothing at the input)
+        const File wav = outDir.getChildFile ("vessel_test.wav");
+        {
+            std::vector<std::vector<float>> clip (2, std::vector<float> ((size_t) SR * 2));
+            for (size_t i = 0; i < clip[0].size(); ++i) { const float v = 0.3f * (float) std::sin (2.0 * MathConstants<double>::pi * 220.0 * (double) i / SR); clip[0][i] = v; clip[1][i] = v; }
+            writeWav (wav, clip);
+        }
+        ChloaelisProcessor q;
+        set (q, chl::listenId, 0.0f);
+        const bool loaded = q.loadVesselFile (wav);
+        q.vesselLevel = 0.8f;
+        r = render (q, 3.0, [] (int) { return std::pair<float, float> { 0.0f, 0.0f }; });
+        const double lv = rmsFrom (r.out[0], (size_t) SR) + rmsFrom (r.out[1], (size_t) SR);
+        check (loaded && lv > 0.01, "the vessel: a sample loaded into the app plays through it", "level " + String (db (lv), 1) + " dBFS");
+        wav.deleteFile();
+        ChloaelisProcessor::forceDesktop = false;
+    }
+
     std::printf ("demo render (16 channels, for an IEM decoder) in %s\n", outDir.getFullPathName().toRawUTF8());
     {
         ChloaelisProcessor p;

@@ -2638,7 +2638,7 @@ namespace
             lastSeg->fontH = 15.0f;    // the symbols need to be legible
 
             // desktop (standalone) only: the vessel you pour audio into, and a fullscreen toggle
-            if (proc.isStandalone())
+            if (proc.desktop())
             {
                 auto* nV = node ({ W - 300, 104 }, 70, 130, 0.0f, true, -1);
                 nV->vial = true;     // the vessel draws its own glass
@@ -2698,6 +2698,12 @@ namespace
 
             // the help screen (hidden until the ? cell is clicked)
             help.desktop = proc.isStandalone();
+            if (proc.desktop())
+            {
+                // the desktop app: how to listen (in a DAW the 16 channels go to your decoder instead)
+                segCell (chl::listenId, { "Headphones", "Speakers", "16 ch" }, { 300.0f, 30.0f }, 250,
+                         "listen: binaural for headphones, a stereo pair for speakers, or the 16 Ambisonics channels for an interface or another app", -1);
+            }
             addChildComponent (help); help.setBounds (getLocalBounds());
             {
                 auto* nHelp = node ({ W - 58, proc.isStandalone() ? 108.0f : 72.0f }, 58, 30, 0.0f, false, -1);
