@@ -1,0 +1,55 @@
+<p align="center"><img src="../docs/icon.png" width="128" alt="Chloaeilius icon"></p>
+
+<h1 align="center">Chloaeilius: the spatial audio version of Chloaelis</h1>
+
+> **Spatial audio.** Chloaeilius is the third-order Ambisonics version of [Chloaelis](../README.md), kept in the Chloaelis repository (this folder). It is an **encoder**: stereo goes in, 16 channels of Ambisonics come out (ACN order, SN3D, the format of the IEM and SPARTA plug-ins), and it decodes nothing itself. Route all 16 channels to a decoder. For the ordinary stereo instrument, see [Chloaelis](../README.md).
+
+<p align="center">
+The same dual filter, tube and delay instrument,<br>
+with its echoes flying round you on the flock and the Lorenz attractor.<br>
+<i>Inspired by the 2012 game <b>Splice</b> and the <b>Chloe</b> Eurorack module by Bizarre Jezabel.</i>
+</p>
+
+![Chloaeilius](docs/screenshot.png)
+
+---
+
+## The sphere
+
+Chloaeilius is an encoder. It sends 16 channels of third-order Ambisonics (ACN order, SN3D, the format of the IEM and SPARTA plug-ins) and decodes nothing itself. Route all 16 to a decoder: in REAPER, give the track 16 channels and put the IEM AllRADecoder (loudspeakers) or BinauralDecoder (headphones) after it, at order 3, SN3D.
+
+Where the sound goes:
+
+- Each side's **dry sound** is a point: the left side ahead and to the left, the right side ahead and to the right.
+- Each side's **main echo** rides the Lorenz attractor (the right side's mirrored through you), so the delay's repeats loop round you in the butterfly's figure.
+- Each of the **seven poly taps** per side rides one bird of the flock, now flying in three dimensions round you. A feedback trail comes back from wherever its bird has flown, so repeats drift through the room, and the birds gather and scatter round you rather than to one side.
+- **Distance**, after the IEM RoomEncoder: every point has its own propagation delay (so echoes flying towards you or away bend in pitch), 1/r level, a little air absorption and first-order reflections from the walls of a room round you. The **Distance** knob (lambda) sets how far out they fly, from beside you to 12 m.
+- With the order on *delay > filter*, the dry sound goes through the tube and filter as before and each tap through its own filter (the taps skip the tube there, so they stay apart).
+
+**Space View**, the switch under the title, shows the sphere four ways (the sound is the same in all of them):
+
+| | |
+| --- | --- |
+| **Lorenz**: the attractor alone, as in Chloaelis | ![Lorenz](docs/views/chloaeilius_view_lorenz.png) |
+| **Orrery**: a dotted globe round you, turning slowly and leaning with the cursor; every point flies inside it with its trail, and the loud places glow on its skin | ![Orrery](docs/views/chloaeilius_view_orrery.png) |
+| **Map**: the whole sphere unrolled (a Hammer projection, as the IEM EnergyVisualizer), ahead in the middle, behind at both edges, with the energy as glowing dust | ![Map](docs/views/chloaeilius_view_map.png) |
+| **Radar**: from above, rings every 2 m, each point on a stalk as tall as it is high, and a ripple wherever an echo lands | ![Radar](docs/views/chloaeilius_view_radar.png) |
+
+**The sphere button** (the circle under **?** in the top right) opens a big sphere over the whole window, with nothing in the way: drag to turn it, scroll to zoom, double-click to set it straight, and switch between globe, map and radar along the top. Every point is named (L DRY, L ECHO, L1 to L7 for the taps, and the same for R), and the loud places glow on the glass.
+
+![The sphere](docs/views/chloaeilius_sphere_globe.png)
+
+## Build it
+
+Chloaeilius isn't released as a download yet. When it is, its releases will be tagged `chloaeilius-v...` on the [Chloaelis Releases page](https://github.com/femifleming/Chloaelis/releases), separate from Chloaelis's own. For now, build it from this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):
+
+```sh
+git clone --recursive https://github.com/femifleming/Chloaelis.git
+cd Chloaelis
+cmake -S Chloaeilius -B build-chloaeilius -DCMAKE_BUILD_TYPE=Release -DCHLOAEILIUS_COPY_AFTER_BUILD=ON
+cmake --build build-chloaeilius --config Release --target Chloaeilius_All
+```
+
+It appears in your DAW as **Chloaeilius** under **Chloaelis**. The tests are `ChloaeiliusTest`, `ChloaeiliusSpatialTest` (where the sound lands, every channel against AmbiX, CPU) and `ChloaeiliusHostTest` (`SPACE_SHOTS=<folder>` saves every view of the sphere).
+
+Everything else (the controls, the delay engines, the tube, the help) works as in Chloaelis: see [its README](../README.md#how-to-use-it).
