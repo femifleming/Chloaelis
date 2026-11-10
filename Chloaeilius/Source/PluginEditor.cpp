@@ -2619,6 +2619,9 @@ namespace
             auto* nDp = knobCell (chl::lzDepthId, -1, { W * 0.5f, 352 }, -0.12f, "Depth", "how far the attractor moves the cutoffs (up to +/- 3.5 octaves)");
             // how the sphere is shown (the picture only: the sound is the same)
             segCell (chl::viewId, { "Lorenz", "Orrery", "Map", "Radar" }, { W * 0.5f, 70 }, 300, "space view: the attractor alone, or the sphere as a globe, a map or from above", -1);
+            if (! proc.desktop())   // the Ambisonic order, top left (where the desktop app has its Listen switch: it listens at 3rd order)
+                segCell (chl::ambiOrderId, { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" }, { 300.0f, 30.0f }, 280,
+                         "ambisonic order: 3rd = 16 channels, 5th = 36, 7th = 64. give the track that many and decode at the same order", -1);
             auto* nSpace = knobCell (chl::spaceId, -1, { W * 0.5f + 100, 640 }, 0.08f, "Distance", "distance: the size of the bubble the echoes fly in, from 1.5 m (close and loud) to 24 m (far, quiet, later)");
             (void) nSpace;
             auto* nOrd = segCell (chl::orderId, { String::fromUTF8 ("Filter \xe2\x80\xba Dly"), String::fromUTF8 ("Dly \xe2\x80\xba Filter") }, { W * 0.5f, 548 }, 190,
@@ -2700,7 +2703,7 @@ namespace
             help.desktop = proc.isStandalone();
             if (proc.desktop())
             {
-                // the desktop app: how to listen (in a DAW the 16 channels go to your decoder instead)
+                // the desktop app: how to listen (in a DAW the Ambisonics go to your decoder instead)
                 segCell (chl::listenId, { "Headphones", "Speakers", "16 ch" }, { 300.0f, 30.0f }, 250,
                          "listen: binaural for headphones, a stereo pair for speakers, or the 16 Ambisonics channels for an interface or another app", -1);
             }

@@ -36,18 +36,18 @@ static void set (ChloaelisProcessor& p, const String& id, float real)
 struct Run { std::vector<std::vector<float>> out; double cpu = 0; bool finite = true; };
 
 template <typename Gen>
-static Run render (ChloaelisProcessor& p, double seconds, Gen gen, bool keep = true)
+static Run render (ChloaelisProcessor& p, double seconds, Gen gen, bool keep = true, int numCh = 16)
 {
     AudioProcessor::BusesLayout layout;
     layout.inputBuses.add (AudioChannelSet::stereo());
-    layout.outputBuses.add (AudioChannelSet::discreteChannels (16));
+    layout.outputBuses.add (AudioChannelSet::discreteChannels (numCh));
     p.setBusesLayout (layout);
     p.setRateAndBufferSizeDetails (SR, BLOCK);
     p.prepareToPlay (SR, BLOCK);
-    AudioBuffer<float> buf (16, BLOCK);
+    AudioBuffer<float> buf (numCh, BLOCK);
     MidiBuffer midi;
     Run r;
-    if (keep) r.out.assign (16, {});
+    if (keep) r.out.assign ((size_t) numCh, {});
     const int total = (int) (seconds * SR);
     const auto t0 = std::chrono::steady_clock::now();
     for (int pos = 0; pos < total; pos += BLOCK)
@@ -55,7 +55,7 @@ static Run render (ChloaelisProcessor& p, double seconds, Gen gen, bool keep = t
         buf.clear();
         for (int i = 0; i < BLOCK; ++i) { auto v = gen (pos + i); buf.setSample (0, i, v.first); buf.setSample (1, i, v.second); }
         p.processBlock (buf, midi);
-        for (int c = 0; c < 16; ++c)
+        for (int c = 0; c < numCh; ++c)
             for (int i = 0; i < BLOCK; ++i)
             {
                 const float x = buf.getSample (c, i);
@@ -120,6 +120,46 @@ int main (int argc, char** argv)
             worst = std::max (worst, std::abs (cw / w2 - y[(size_t) c]));
         }
         check (worst < 0.01, "each channel is its harmonic (ACN / SN3D, as the IEM decoders expect)", "worst error " + String (worst, 5));
+    }
+
+    std::printf ("higher orders (up to 7th, 64 channels)\n");
+    {
+        const auto leftFront = fp::ambi::fromAzEl (MathConstants<float>::pi / 3.0f, 0.0f);
+        for (int order : { 5, 7 })
+        {
+            const int nch = fp::ambi::chFor (order);
+            ChloaelisProcessor p;
+            for (int s = 0; s < 2; ++s) set (p, chl::pid (s, chl::wet), 0.0f);
+            set (p, chl::ambiOrderId, (float) (order - 1));
+            fp::DistanceSource::withWalls = false;
+            auto r = render (p, 1.0, noiseLeft, true, nch);
+            fp::DistanceSource::withWalls = true;
+            const auto y = fp::ambi::sh (leftFront, order);
+            double w2 = 0, worst = 0;
+            for (size_t i = (size_t) SR / 2; i < r.out[0].size(); ++i) w2 += (double) r.out[0][i] * r.out[0][i];
+            for (int c = 0; c < nch; ++c)
+            {
+                double cw = 0;
+                for (size_t i = (size_t) SR / 2; i < r.out[0].size(); ++i) cw += (double) r.out[(size_t) c][i] * r.out[0][i];
+                worst = std::max (worst, std::abs (cw / w2 - y[(size_t) c]));
+            }
+            check (r.finite && worst < 0.01 && p.orderNow.load() == order,
+                   (String (order) + "th order: all " + String (nch) + " channels are their harmonics").toRawUTF8(), "worst error " + String (worst, 5));
+        }
+        {
+            ChloaelisProcessor p;
+            set (p, chl::ambiOrderId, 6.0f);
+            render (p, 0.2, noiseLeft, false, 36);
+            check (p.orderNow.load() == 5, "7th order asked for on a 36-channel track: 5th comes out", "order " + String (p.orderNow.load()));
+        }
+        {
+            ChloaelisProcessor p;
+            set (p, chl::ambiOrderId, 6.0f);
+            set (p, chl::widthId, 1.0f); set (p, chl::flockId, 1.0f);
+            for (int s = 0; s < 2; ++s) { set (p, chl::pid (s, chl::wet), 1.0f); set (p, chl::pid (s, chl::regen), 0.6f); }
+            auto r = render (p, 6.0, bursts, false, 64);
+            check (r.finite && r.cpu < 0.8, "all 18 points at 7th order", String (r.cpu * 100.0, 1) + " % of one core in real time");
+        }
     }
 
     std::printf ("the echoes\n");

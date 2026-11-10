@@ -26,6 +26,7 @@ class DistanceSource
 public:
     static constexpr int kTaps = 7;   // direct + 6 walls
     static inline bool withWalls = true;   // (a test turns the walls off to check the direct path alone)
+    int order = ambi::kOrder;              // the Ambisonic order it encodes to (the processor sets it)
     static constexpr float refMetres = 4.0f;   // at 4 m a sound is at unity; nearer louder (up to +12 dB), further quieter (1 / distance)
 
     void prepare (double sampleRate, int maxBlock)
@@ -63,7 +64,7 @@ public:
             const float gain = std::min (4.0f, ref / d) * (k == 0 ? 1.0f : 0.35f);   // each wall -9 dB: enough to say how far, not enough to blur where
             const float air = 20000.0f / (1.0f + d / 25.0f) * (k == 0 ? 1.0f : 0.55f);
             const float a = 1.0f - std::exp (-(float) kTwoPi * std::min (air, (float) sr * 0.45f) / (float) sr);
-            ambi::Coefs c = k == 0 ? ambi::encodeNear (posTo) : ambi::sh (img[k].normalised());
+            ambi::Coefs c = k == 0 ? ambi::encodeNear (posTo, order) : ambi::sh (img[k].normalised(), order);
             if (fresh) { t.delay = delay; t.gain = gain; t.coef = c; t.a = a; }
 
             // the path: read back along the ring (gliding the delay), filter, level
@@ -80,7 +81,7 @@ public:
             t.delay = delay; t.gain = gain; t.a = a;
 
             // into the 16 channels, the gains gliding from the last block's direction
-            for (int ch = 0; ch < ambi::kCh; ++ch)
+            for (int ch = 0; ch < ambi::chFor (order); ++ch)
             {
                 const float c0 = t.coef[(size_t) ch], c1 = c[(size_t) ch];
                 if (c0 == 0.0f && c1 == 0.0f) continue;

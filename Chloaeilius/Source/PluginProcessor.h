@@ -121,6 +121,11 @@ private:
     fp::ambi::StereoDecoder stereoDec;
     juce::AudioBuffer<float> monitor;
     std::atomic<float>* pListen = nullptr;
+    std::atomic<float>* pAmbiOrder = nullptr;
+public:
+    std::atomic<int> orderNow { 3 };
+    static int defaultOrder();   // the order coming out (the setting, or less if the track has too few channels)
+private:
     std::array<fp::ambi::Vec3, chl::numSides * kPoints> where {};
     float flockCur = 0.0f;
     std::atomic<float>* pLzSpeed = nullptr, *pLzChaos = nullptr, *pLzShape = nullptr, *pLzDepth = nullptr, *pWidth = nullptr, *pOrder = nullptr;

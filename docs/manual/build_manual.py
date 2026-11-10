@@ -142,7 +142,7 @@ def params_section(params, spatial):
     s.append("<h3>Left side</h3>" + param_table(left))
     s.append("<h3>Right side</h3>" + param_table(right))
     if spatial:
-        s.append("<p class='note'>Distance is the radius of the bubble you're in. Listen only does anything in the desktop app; the plug-ins always send the 16 channels. Space View changes the picture, never the sound.</p>")
+        s.append("<p class='note'>Distance is the radius of the bubble you're in. Ambisonic Order sets how many channels go out (16 at 3rd order, 36 at 5th, 64 at 7th). Listen only does anything in the desktop app; the plug-ins always send the Ambisonics. Space View changes the picture, never the sound.</p>")
     return "".join(s)
 
 def trouble(spatial):
@@ -155,7 +155,7 @@ def trouble(spatial):
     ]
     if spatial:
         items.insert(0, ("I only hear two channels, or nothing moves round me",
-                         "In a DAW the track needs 16 channels and a decoder after Chloaeilius (order 3, ACN, SN3D), such as the IEM AllRADecoder or BinauralDecoder. In the desktop app, set Listen to Headphones or Speakers."))
+                         "In a DAW the track needs as many channels as the order switch says (16 at 3rd order, 36 at 5th, 64 at 7th) and a decoder after Chloaeilius at the same order (ACN, SN3D), such as the IEM AllRADecoder or BinauralDecoder. In the desktop app, set Listen to Headphones or Speakers."))
     return "<h2 id='trouble'>Problems and answers</h2>" + "".join("<h3>%s</h3><p>%s</p>" % (esc(a), b) for a, b in items)
 
 CSS = """
@@ -210,11 +210,11 @@ def build(which, dump, out_pdf):
         body = markdown(main_md, REPO, skip_titles=("Contents",))
         # (the README's opening note about Chloaeilius stays: it says where the spatial version is)
     else:
-        name, version = "Chloaeilius", "0.1.0"
-        tag = "The spatial audio version of Chloaelis: a third-order Ambisonics encoder, its echoes flying round you on the flock and the Lorenz attractor."
+        name, version = "Chloaeilius", "0.2.0"
+        tag = "The spatial audio version of Chloaelis: an Ambisonics encoder (1st to 7th order), its echoes flying round you on the flock and the Lorenz attractor."
         shot = os.path.join(REPO, "Chloaeilius/docs/views/chloaeilius_sphere_globe.png")
         sp_md = open(os.path.join(REPO, "Chloaeilius/README.md")).read()
-        about = ("<p>This manual covers Chloaeilius 0.1.0, the plug-in (AU, VST3, LV2) and the desktop app. Chloaeilius is the same instrument as Chloaelis, "
+        about = ("<p>This manual covers Chloaeilius 0.2.0, the plug-in (AU, VST3, LV2) and the desktop app. Chloaeilius is the same instrument as Chloaelis, "
                  "so after the spatial chapters it carries Chloaelis's own: what it is, the layout, the symbols and how to play it. "
                  "Then a reference for every parameter, and answers to common problems.</p>")
         body = markdown(sp_md, os.path.join(REPO, "Chloaeilius"))

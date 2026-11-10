@@ -3,6 +3,8 @@
 
 namespace fp
 {
+// (the desktop app listens at 3rd order: the first 16 channels, whatever order goes out)
+constexpr int kMonCh = 16;
 namespace ambi
 {
 // Listening in the desktop app (the plug-ins don't decode: in a DAW the 16 channels go to a
@@ -25,12 +27,12 @@ public:
             const float y = std::sin (std::clamp (1.5f * std::asin (std::clamp (dirs[k].y, -1.0f, 1.0f)), -1.5707963f, 1.5707963f));
             const float back = dirs[k].x < 0.0f ? 1.0f + 0.3f * dirs[k].x : 1.0f;
             const float gl = std::sqrt (0.5f * (1.0f + y)) * back, gr = std::sqrt (0.5f * (1.0f - y)) * back;
-            for (int n = 0; n < kCh; ++n) { m[0][(size_t) n] += gl * D[k][(size_t) n]; m[1][(size_t) n] += gr * D[k][(size_t) n]; }
+            for (int n = 0; n < kMonCh; ++n) { m[0][(size_t) n] += gl * D[k][(size_t) n]; m[1][(size_t) n] += gr * D[k][(size_t) n]; }
         }
         // a source straight ahead comes out of both speakers at -3 dB
         const auto f = sh ({ 1, 0, 0 });
         float l = 0.0f;
-        for (int n = 0; n < kCh; ++n) l += m[0][(size_t) n] * f[(size_t) n];
+        for (int n = 0; n < kMonCh; ++n) l += m[0][(size_t) n] * f[(size_t) n];
         const float k = 0.70710678f / std::max (1.0e-6f, l);
         for (auto& r : m) for (auto& v : r) v *= k;
     }
@@ -39,7 +41,7 @@ public:
     {
         std::fill (L, L + n, 0.0f);
         std::fill (R, R + n, 0.0f);
-        for (int c = 0; c < kCh; ++c)
+        for (int c = 0; c < kMonCh; ++c)
         {
             const float gl = m[0][(size_t) c], gr = m[1][(size_t) c];
             for (int i = 0; i < n; ++i) { L[i] += gl * in[c][i]; R[i] += gr * in[c][i]; }
@@ -71,7 +73,7 @@ public:
             for (size_t k = 0; k < dirs.size(); ++k)
             {
                 speakerToEar (dirs[k], ear, ir);
-                for (int c = 0; c < kCh; ++c)
+                for (int c = 0; c < kMonCh; ++c)
                     for (int t = 0; t < taps; ++t) h[ear][(size_t) c][(size_t) t] += D[k][(size_t) c] * ir[(size_t) t];
             }
         // loudness: a source straight ahead reaches each ear at -6 dB (a stereo pair of grains, which
@@ -82,13 +84,13 @@ public:
             for (int t = 0; t < taps; ++t)
             {
                 double s = 0.0;
-                for (int c = 0; c < kCh; ++c) s += h[0][(size_t) c][(size_t) t] * f[(size_t) c];
+                for (int c = 0; c < kMonCh; ++c) s += h[0][(size_t) c][(size_t) t] * f[(size_t) c];
                 e += s * s;
             }
             const float k = (float) (0.5 / std::sqrt (std::max (1.0e-12, e)));
             for (auto& ear : h) for (auto& c : ear) for (auto& v : c) v *= k;
         }
-        hist.assign ((size_t) kCh, std::vector<float> ((size_t) (taps - 1 + std::max (1, maxBlock)), 0.0f));
+        hist.assign ((size_t) kMonCh, std::vector<float> ((size_t) (taps - 1 + std::max (1, maxBlock)), 0.0f));
     }
 
     // in: 16 channels; L, R: the two ears (overwritten)
@@ -99,7 +101,7 @@ public:
             for (auto& hh : hist) hh.resize ((size_t) (taps - 1 + n), 0.0f);
         std::fill (L, L + n, 0.0f);
         std::fill (R, R + n, 0.0f);
-        for (int c = 0; c < kCh; ++c)
+        for (int c = 0; c < kMonCh; ++c)
         {
             float* x = hist[(size_t) c].data();
             std::copy (in[c], in[c] + n, x + taps - 1);
@@ -180,7 +182,7 @@ public:
         for (int i = taps - 16; i < taps; ++i) ir[(size_t) i] *= 0.5f + 0.5f * std::cos ((float) kPi * (float) (i - (taps - 16)) / 16.0f);
     }
 
-    std::array<std::array<std::vector<float>, kCh>, 2> h;
+    std::array<std::array<std::vector<float>, kMonCh>, 2> h;
 private:
     double sr = 48000.0;
     std::vector<std::vector<float>> hist;

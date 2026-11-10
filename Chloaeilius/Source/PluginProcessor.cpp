@@ -8,9 +8,17 @@ static_assert ((int) chl::inAtt == (int) chl::dsp::vIn && (int) chl::cutoff == (
                && (int) chl::drive == (int) chl::dsp::vDrive && (int) chl::time == (int) chl::dsp::vTime && (int) chl::regen == (int) chl::dsp::vRegen
                && (int) chl::wet == (int) chl::dsp::vWet && (int) chl::out == (int) chl::dsp::vOut, "voice parameter slots must match the parameter enum");
 
+// as an Audio Unit (the hosts' Ambisonics go to 3rd order) and in the desktop app, 3rd order is published;
+// elsewhere 7th, so a track with that many channels has room for it (the order setting says how many are used)
+int ChloaelisProcessor::defaultOrder()
+{
+    const auto t = PluginHostType::getPluginLoadedAs();
+    return t == AudioProcessor::wrapperType_AudioUnit || t == AudioProcessor::wrapperType_Standalone ? 3 : 7;
+}
+
 ChloaelisProcessor::ChloaelisProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", AudioChannelSet::stereo(), true)
-                                       .withOutput ("Output", AudioChannelSet::ambisonic (3), true)),
+                                       .withOutput ("Output", AudioChannelSet::ambisonic (defaultOrder()), true)),
       apvts (*this, nullptr, "CHLOAELIS", chl::createLayout())
 {
     for (int s = 0; s < chl::numSides; ++s)
@@ -38,6 +46,7 @@ ChloaelisProcessor::ChloaelisProcessor()
     pFlock    = apvts.getRawParameterValue (chl::flockId);
     pSpace    = apvts.getRawParameterValue (chl::spaceId);
     pListen   = apvts.getRawParameterValue (chl::listenId);
+    pAmbiOrder = apvts.getRawParameterValue (chl::ambiOrderId);
     flock.reset();
 
     // the recordings are compiled into the plugin (Ogg Vorbis: decodes the same on every platform)
@@ -66,10 +75,14 @@ ChloaelisProcessor::ChloaelisProcessor()
 
 bool ChloaelisProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // 3rd-order Ambisonics out (16 plain channels too, except as an Audio Unit, which publishes only the ambisonic layout)
+    // Ambisonics out, any order from 1st to 7th (the same counts of plain channels too, except as an Audio Unit,
+    // which publishes only the ambisonic layouts)
     const auto out = layouts.getMainOutputChannelSet();
-    if (out != AudioChannelSet::ambisonic (3) && ! (out == AudioChannelSet::discreteChannels (16) && wrapperType != wrapperType_AudioUnit))
-        return false;
+    bool ok = false;
+    for (int o = 1; o <= fp::ambi::kMaxOrder; ++o)
+        ok = ok || out == AudioChannelSet::ambisonic (o)
+                || (out == AudioChannelSet::discreteChannels (fp::ambi::chFor (o)) && wrapperType != wrapperType_AudioUnit);
+    if (! ok) return false;
     const auto in = layouts.getMainInputChannelSet();
     return in == AudioChannelSet::mono() || in == AudioChannelSet::stereo();
 }
@@ -370,6 +383,12 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         float* const* bw = bus.getArrayOfWritePointers();
         // both sides meet in the same channels: each at -3 dB, so the two together come out about as loud as one did
         parts.applyGain (0, n, 0.70710678f);
+        // the order: the setting, or the highest that fits in the channels the track gives
+        int aOrder = jlimit (1, fp::ambi::kMaxOrder, 1 + (int) std::lround (pAmbiOrder->load()));
+        if (numOut >= 4) aOrder = jmin (aOrder, fp::ambi::orderFor (numOut));
+        const int nch = fp::ambi::chFor (aOrder);
+        orderNow.store (aOrder, std::memory_order_relaxed);
+        for (auto& side : dist) for (auto& d : side) d.order = aOrder;
         for (int s = 0; s < chl::numSides; ++s)
             for (int j = 0; j < kPoints; ++j)
             {
@@ -382,11 +401,11 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
                 pv.level.store (pv.level.load (std::memory_order_relaxed) * 0.7f + 0.3f * lv, std::memory_order_relaxed);
             }
         // (never let a NaN through)
-        for (int c = 0; c < fp::ambi::kCh; ++c)
+        for (int c = 0; c < nch; ++c)
             for (int i = 0; i < n; ++i) if (! std::isfinite (bw[c][i])) bw[c][i] = 0.0f;
-        // the 16 channels, linked: never clips (a small bubble brings everything close and loud)
-        leveler.process (bw, fp::ambi::kCh, n);
-        limiter.process (bw, fp::ambi::kCh, n);
+        // every channel, linked: never clips (a small bubble brings everything close and loud)
+        leveler.process (bw, nch, n);
+        limiter.process (bw, nch, n);
         energy.process (bus.getArrayOfReadPointers(), n);
         outChannels.store (numOut, std::memory_order_relaxed);
         // the desktop app can listen for you: binaural for headphones or a stereo pair for speakers,
@@ -406,7 +425,7 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         }
         else
             for (int c = 0; c < numOut; ++c)
-                if (c < fp::ambi::kCh) buffer.copyFrom (c, 0, bus.getReadPointer (c), n);
+                if (c < nch) buffer.copyFrom (c, 0, bus.getReadPointer (c), n);
                 else buffer.clear (c, 0, n);
     }
 

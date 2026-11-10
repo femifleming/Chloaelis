@@ -155,7 +155,7 @@ class MultiLimiter
 {
 public:
     static constexpr float ceiling = PeakLimiter::ceiling;
-    static constexpr int kMaxCh = 16;
+    static constexpr int kMaxCh = 64;
 
     void prepare (double sr)
     {

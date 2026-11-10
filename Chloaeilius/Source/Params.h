@@ -30,7 +30,8 @@ namespace chl
                               srcSelId = "src_sel", srcLevelId = "src_level", masterFbId = "master_fb", flockId = "poly_flock",
                               spaceId = "space",   // the size of the bubble the echoes fly in (1.5 m .. 24 m)
                               viewId = "space_view",   // how the sphere is shown (no effect on the sound)
-                              listenId = "listen";      // the desktop app only: headphones, speakers, or the 16 channels themselves
+                              listenId = "listen",      // the desktop app only: headphones, speakers, or the 16 channels themselves
+                              ambiOrderId = "ambi_order";   // the Ambisonic order put out: 1st .. 7th (4 .. 64 channels)
 
     inline bool isLfoRate (int p) { return p == lmRate || p == ltRate || p == ldRate; }
 
@@ -138,6 +139,7 @@ namespace chl
             AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (1.5f * std::pow (16.0f, v), 1) + " m"; })));
         g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { listenId, 1 }, "Listen (desktop app)", StringArray { "Headphones", "Speakers", "16 ch" }, 0));
         g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { viewId, 1 }, "Space View", StringArray { "Lorenz", "Orrery", "Map", "Radar" }, 1));
+        g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { ambiOrderId, 1 }, "Ambisonic Order", StringArray { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" }, 2));
         layout.add (std::move (g));
 
         return layout;

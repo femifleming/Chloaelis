@@ -10,7 +10,7 @@ and two field recordings built in. Plug-in (AU / VST3 / LV2) and desktop app, fo
 
 ![Chloaelis](docs/screenshot.png)
 
-> **Spatial audio version: [Chloaeilius](Chloaeilius/README.md).** Chloaelis as a third-order Ambisonics encoder (16 channels, ACN/SN3D, for the IEM and SPARTA decoders): each side's dry sound is a point, its main echo rides the Lorenz attractor and its poly taps ride a 3-D flock, so the echoes fly round you, with distance and Doppler and a sphere you can turn to see where everything is. It lives in the [`Chloaeilius`](Chloaeilius) folder of this repository.
+> **Spatial audio version: [Chloaeilius](Chloaeilius/README.md).** Chloaelis as an Ambisonics encoder (1st to 7th order, 16 channels at 3rd order up to 64 at 7th, ACN/SN3D, for the IEM and SPARTA decoders): each side's dry sound is a point, its main echo rides the Lorenz attractor and its poly taps ride a 3-D flock, so the echoes fly round you, with distance and Doppler and a sphere you can turn to see where everything is. It lives in the [`Chloaeilius`](Chloaeilius) folder of this repository.
 >
 > ![Chloaeilius](Chloaeilius/docs/views/chloaeilius_sphere_globe.png)
 

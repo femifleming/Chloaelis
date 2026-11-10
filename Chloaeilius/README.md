@@ -2,7 +2,7 @@
 
 <h1 align="center">Chloaeilius: the spatial audio version of Chloaelis</h1>
 
-> **Spatial audio.** Chloaeilius is the third-order Ambisonics version of [Chloaelis](../README.md), kept in the Chloaelis repository (this folder). It is an **encoder**: stereo goes in, 16 channels of Ambisonics come out (ACN order, SN3D, the format of the IEM and SPARTA plug-ins), and it decodes nothing itself. Route all 16 channels to a decoder. For the ordinary stereo instrument, see [Chloaelis](../README.md).
+> **Spatial audio.** Chloaeilius is the Ambisonics version (1st to 7th order, 3rd by default) of [Chloaelis](../README.md), kept in the Chloaelis repository (this folder). It is an **encoder**: stereo goes in, Ambisonics come out (ACN order, SN3D, the format of the IEM and SPARTA plug-ins: 16 channels at 3rd order, 36 at 5th, 64 at 7th), and it decodes nothing itself. Route all of them to a decoder of the same order. For the ordinary stereo instrument, see [Chloaelis](../README.md).
 
 <p align="center">
 The same dual filter, tube and delay instrument,<br>
@@ -18,7 +18,7 @@ with its echoes flying round you on the flock and the Lorenz attractor.<br>
 
 ## The sphere
 
-Chloaeilius is an encoder. It sends 16 channels of third-order Ambisonics (ACN order, SN3D, the format of the IEM and SPARTA plug-ins) and decodes nothing itself. Route all 16 to a decoder: in REAPER, give the track 16 channels and put the IEM AllRADecoder (loudspeakers) or BinauralDecoder (headphones) after it, at order 3, SN3D.
+Chloaeilius is an encoder. It sends Ambisonics (ACN order, SN3D, the format of the IEM and SPARTA plug-ins) and decodes nothing itself. The **order** switch at the top left picks how sharp it is, from 1st to 7th order: 3rd (the default) is 16 channels, 5th is 36, 7th is 64. In REAPER, give the track that many channels and put the IEM AllRADecoder (loudspeakers) or BinauralDecoder (headphones) after it at the same order, SN3D. On a track with too few channels for the order you picked, the highest order that fits comes out. At 7th order all 18 points take about 14 % of one core, against 10 % at 3rd.
 
 Where the sound goes:
 
@@ -52,7 +52,7 @@ Where the sound goes:
   - **16 ch**: the Ambisonics themselves, for a multichannel interface or to route into another app (for example through BlackHole into REAPER and an IEM decoder).
 - **Options** (the audio device and channels), **fullscreen** (cmd+F, esc to leave) and the help, as in Chloaelis.
 
-The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send the 16 channels to your decoder.
+The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send the Ambisonics to your decoder. The desktop app works at 3rd order.
 
 ![The desktop app](docs/views/chloaeilius_desktop.png)
 
