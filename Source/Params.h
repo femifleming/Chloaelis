@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Scales.h"
 
 // Parameter ids and layout for Chloaelis: two Chloe-style channel strips (L / R, hard panned)
 // plus a shared Lorenz modulator, the poly width and the filter / delay order.
@@ -23,6 +24,39 @@ namespace chl
     inline juce::String delayTypeId (int side)        { return sideTag (side) + "dtype"; }
     inline juce::String timeModeId (int side)         { return sideTag (side) + "tmode"; }
     inline juce::String tubeTypeId (int side)         { return sideTag (side) + "tubetype"; }
+    inline juce::String ksId (int side)              { return sideTag (side) + "ks"; }          // Karplus-Strong time
+    inline const juce::String ksScaleId = "ks_scale";   // the scale the Karplus-Strong notes are tuned to (shared)
+
+    // Karplus-Strong time: the Time knob picks a note instead of a delay time, snapped to the
+    // chosen scale (the same list as Cloudfin). The knob still runs the same way round: up = longer
+    // = lower. Six octaves, from A0 (27.5 Hz) at the top of the knob to 1760 Hz at the bottom; the
+    // scale's 1/1 is A.
+    constexpr double ksBaseHz = 27.5, ksSpanCents = 7200.0;
+    struct KsNote { double hz = 110.0; int degree = 0; };
+    inline const fp::Scale& ksScale (int index)
+    {
+        const auto& all = fp::getScales();
+        return all[(size_t) juce::jlimit (0, (int) all.size() - 1, index)];
+    }
+    inline KsNote ksNote (float timeNorm, int scaleIndex)
+    {
+        const auto& s = ksScale (scaleIndex);
+        auto q = fp::quantise (s, (1.0 - (double) juce::jlimit (0.0f, 1.0f, timeNorm)) * ksSpanCents);
+        // stay inside the range: a degree that lands outside it moves a period in
+        while (q.cents < -1.0) q.cents += s.period;
+        while (q.cents > ksSpanCents + 1.0) q.cents -= s.period;
+        return { ksBaseHz * std::exp2 (q.cents / 1200.0), q.degreeIndex };
+    }
+    // poly tap k (0..6) of a side plays another degree of the scale, stacked up from the note the
+    // main string landed on (left: 2, 4, 6 .. degrees up; right: 1, 3, 5 ..): its pitch as a ratio
+    inline double ksTapRatio (int scaleIndex, int degree, int side, int k)
+    {
+        const auto& s = ksScale (scaleIndex);
+        const int n = (int) s.degrees.size();
+        const int d = juce::jlimit (0, n - 1, degree), idx = d + (side == 0 ? 2 * (k + 1) : 2 * k + 1);
+        const double cents = (idx / n) * s.period + s.degrees[(size_t) (idx % n)].cents - s.degrees[(size_t) d].cents;
+        return std::exp2 (cents / 1200.0);
+    }
 
     // shared
     inline const juce::String lzSpeedId = "lz_speed", lzChaosId = "lz_chaos", lzShapeId = "lz_shape", lzDepthId = "lz_depth",
@@ -112,6 +146,7 @@ namespace chl
             grp->addChild (std::make_unique<AudioParameterChoice> (ParameterID { delayTypeId (s), 1 }, sideName (s) + "Delay Type", StringArray { "Tape", "PT2399", "BBD" }, 1));
             grp->addChild (std::make_unique<AudioParameterChoice> (ParameterID { timeModeId (s), 1 }, sideName (s) + "Time Change", StringArray { "Slew", "Fade" }, 0));
             grp->addChild (std::make_unique<AudioParameterChoice> (ParameterID { tubeTypeId (s), 1 }, sideName (s) + "Tube Type", StringArray { "12AX7", "EL84", "6L6", "Starved" }, 0));
+            grp->addChild (std::make_unique<AudioParameterBool> (ParameterID { ksId (s), 1 }, sideName (s) + "Karplus-Strong Time", false));
             layout.add (std::move (grp));
         }
 
@@ -131,6 +166,11 @@ namespace chl
         g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { srcSelId, 1 }, "Source", StringArray { "Base Loop", "Hydrophone" }, 0));
         g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { srcLevelId, 1 }, "Source Level", NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.0f, pct));
         g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { masterFbId, 1 }, "Master Feedback", NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.0f, pct));
+        {
+            StringArray scaleNames;
+            for (auto& sc : fp::getScales()) scaleNames.add (sc.name);
+            g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { ksScaleId, 1 }, "Karplus-Strong Scale", scaleNames, 0));
+        }
         layout.add (std::move (g));
 
         return layout;

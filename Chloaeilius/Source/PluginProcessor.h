@@ -63,6 +63,9 @@ public:
     float levelerGainNow() const noexcept { return leveler.getGain(); }
     static fp::ambi::Vec3 lorenzPoint (float x, float y, float z, int side) noexcept;
 
+    std::array<std::atomic<float>, chl::numSides> ksHz {};             // Karplus-Strong: the note each side is on now (Hz)
+    std::atomic<int> uiTheme { 0 };                                    // 0 = the glass HUD, 1 = Brick (Windows 2000)
+
     // written by the UI
     std::array<std::atomic<bool>, chl::numSides> refreshTape {};
 
@@ -108,6 +111,12 @@ private:
     std::atomic<float>* pType[chl::numSides] {};
     std::atomic<float>* pTMode[chl::numSides] {};
     std::atomic<float>* pTubeType[chl::numSides] {};
+    std::atomic<float>* pKs[chl::numSides] {};
+    std::atomic<float>* pKsScale = nullptr;
+    float ksLastNorm[chl::numSides] { -1.0f, -1.0f };
+    int ksLastScale = -1;
+    chl::KsNote ksCur[chl::numSides];
+    float ksTapRatio[chl::numSides][7] {};
     std::atomic<float>* pSrcSel = nullptr, *pSrcLevel = nullptr, *pMasterFb = nullptr, *pFlock = nullptr;
     chl::dsp::Flock flock;
     std::atomic<float>* pSpace = nullptr;

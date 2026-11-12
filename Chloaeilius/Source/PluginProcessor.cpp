@@ -31,6 +31,7 @@ ChloaelisProcessor::ChloaelisProcessor()
         pType[s]    = apvts.getRawParameterValue (chl::delayTypeId (s));
         pTMode[s]   = apvts.getRawParameterValue (chl::timeModeId (s));
         pTubeType[s] = apvts.getRawParameterValue (chl::tubeTypeId (s));
+        pKs[s]       = apvts.getRawParameterValue (chl::ksId (s));
         voices[s].copySign = s == 0 ? 1.0f : -1.0f;
         lfoPhase[s][0] = 0.0f; lfoPhase[s][1] = 0.33f; lfoPhase[s][2] = 0.66f;
     }
@@ -44,6 +45,7 @@ ChloaelisProcessor::ChloaelisProcessor()
     pSrcLevel = apvts.getRawParameterValue (chl::srcLevelId);
     pMasterFb = apvts.getRawParameterValue (chl::masterFbId);
     pFlock    = apvts.getRawParameterValue (chl::flockId);
+    pKsScale  = apvts.getRawParameterValue (chl::ksScaleId);
     pSpace    = apvts.getRawParameterValue (chl::spaceId);
     pListen   = apvts.getRawParameterValue (chl::listenId);
     pAmbiOrder = apvts.getRawParameterValue (chl::ambiOrderId);
@@ -217,6 +219,7 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         fl[s].fade   = pTMode[s]->load() > 0.5f;
         fl[s].order  = pOrder->load() > 0.5f ? 1 : 0;
         fl[s].tubeType = jlimit (0, 3, (int) std::lround (pTubeType[s]->load()));
+        fl[s].ks     = pKs[s]->load() > 0.5f;
 
         if (refreshTape[(size_t) s].exchange (false)) voices[s].refreshTape();
         const float pa = pendingAge[s].exchange (-1.0f);
@@ -330,6 +333,33 @@ void ChloaelisProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
         for (int s = 0; s < chl::numSides; ++s)
             for (int k = 0; k < 7; ++k)
                 fl[s].tapMod[k] = flockCur > 0.0005f ? std::exp2 (flockCur * 0.9f * flock.x[s * 7 + k]) : 1.0f;
+
+        // Karplus-Strong time: the (modulated) Time knob picks a note of the scale; the poly taps
+        // play other degrees stacked up from it, and the flock only detunes them a little
+        {
+            const int scale = (int) std::lround (pKsScale->load());
+            for (int s = 0; s < chl::numSides; ++s)
+            {
+                if (! fl[s].ks) { ksLastNorm[s] = -1.0f; continue; }
+                const float nrm = ranges[chl::time].convertTo0to1 (target[s][chl::time]);
+                if (std::abs (nrm - ksLastNorm[s]) > 1.0e-5f || scale != ksLastScale)
+                {
+                    ksLastNorm[s] = nrm;
+                    ksCur[s] = chl::ksNote (nrm, scale);
+                    for (int k = 0; k < 7; ++k)
+                    {
+                        double r = chl::ksTapRatio (scale, ksCur[s].degree, s, k);
+                        while (ksCur[s].hz * r > 5000.0) r *= 0.5;       // too high for the line: an octave down
+                        ksTapRatio[s][k] = (float) r;
+                    }
+                    ksHz[(size_t) s].store ((float) ksCur[s].hz, std::memory_order_relaxed);
+                }
+                fl[s].ksPeriod = (float) (1.0 / ksCur[s].hz);
+                for (int k = 0; k < 7; ++k)
+                    fl[s].ksTap[k] = (flockCur > 0.0005f ? std::exp2 (flockCur * 0.03f * flock.x[s * 7 + k]) : 1.0f) / ksTapRatio[s][k];
+            }
+            ksLastScale = scale;
+        }
 
         for (int s = 0; s < chl::numSides; ++s)
         {
@@ -460,6 +490,7 @@ ValueTree ChloaelisProcessor::stateWithExtras()
         state.setProperty ("vesselEnd", vesselEnd.load(), nullptr);
     }
     state.setProperty ("vesselLevel", vesselLevel.load(), nullptr);
+    state.setProperty ("uiTheme", uiTheme.load(), nullptr);
     return state;
 }
 
@@ -473,6 +504,7 @@ void ChloaelisProcessor::applyState (const ValueTree& tree)
         tapeAge[(size_t) s].store (a);
     }
     vesselLevel.store ((float) tree.getProperty ("vesselLevel", 0.0f));
+    if (tree.hasProperty ("uiTheme")) uiTheme.store (jlimit (0, 1, (int) tree.getProperty ("uiTheme")));
     const String vp = tree.getProperty ("vesselPath", String());
     if (isStandalone() && vp.isNotEmpty() && File (vp).existsAsFile())
     {

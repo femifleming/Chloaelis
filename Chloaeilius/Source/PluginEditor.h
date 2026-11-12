@@ -19,6 +19,7 @@ public:
     void holdMouseForTest (float x, float y);   // pretend the cursor is here (design units); x < 0 releases it
     void showHelpForTest (bool show);
     void showSphereForTest (int mode, float yaw = 0.0f, float pitch = 0.0f);   // 0 closes it; 1 globe, 2 map, 3 radar
+    void setDensityForTest (float d);   // the cells' size against their spacing (a preview of a tighter layout)
     void holdFocusForTest (float y);   // < 0 releases it   // focusY >= 0: hold the focus band there (design units)
 
 private:

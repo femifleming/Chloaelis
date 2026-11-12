@@ -18,6 +18,7 @@ public:
     void advanceFrames (int frames, float focusY = -1.0f);
     void holdMouseForTest (float x, float y);   // pretend the cursor is here (design units); x < 0 releases it
     void showHelpForTest (bool show);
+    void setDensityForTest (float d);   // the cells' size against their spacing (a preview of a tighter layout)
     void holdFocusForTest (float y);   // < 0 releases it   // focusY >= 0: hold the focus band there (design units)
 
 private:

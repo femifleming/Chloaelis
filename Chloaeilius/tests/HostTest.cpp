@@ -520,6 +520,8 @@ int main (int argc, char** argv)
         std::unique_ptr<AudioProcessorEditor> ed (p.createEditorAndMakeActive());
         ed->setSize (ChloaelisEditor::designW, ChloaelisEditor::designH);
         File out (argc > 1 ? argv[1] : "chloaelis_ui.png");
+        if (auto* dn = std::getenv ("CHL_DENSITY"))
+            if (auto* ce = dynamic_cast<ChloaelisEditor*> (ed.get())) ce->setDensityForTest ((float) std::atof (dn));
         for (int shot = 0; shot < 5; ++shot)
         {
             // centred; focus low; cursor at the left; cursor at the right; silence (cool palette)
@@ -561,6 +563,24 @@ int main (int argc, char** argv)
             auto f = out.getSiblingFile (out.getFileNameWithoutExtension() + "_help.png");
             f.deleteFile(); FileOutputStream os (f); PNGImageFormat().writeImageToStream (img, os);
             std::printf ("wrote %s\n", f.getFullPathName().toRawUTF8());
+            ce->showHelpForTest (false);
+        }
+        if (auto* ce = dynamic_cast<ChloaelisEditor*> (ed.get()))
+        {
+            // the Brick theme, with the left side on Karplus-Strong time
+            p.uiTheme = 1;
+            p.apvts.getParameter (chl::ksId (0))->setValueNotifyingHost (1.0f);
+            for (int b = 0; b < 30; ++b) { for (int i = 0; i < 512; ++i) for (int c = 0; c < 2; ++c) buf.setSample (c, i, std::sin ((b * 512 + i) * 0.02f) * 0.4f); p.processBlock (buf, m); ce->advanceFrames (2); }
+            auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+            auto f = out.getSiblingFile (out.getFileNameWithoutExtension() + "_brick.png");
+            f.deleteFile(); FileOutputStream os (f); PNGImageFormat().writeImageToStream (img, os);
+            std::printf ("wrote %s\n", f.getFullPathName().toRawUTF8());
+            p.uiTheme = 0;
+            p.apvts.getParameter (chl::ksId (0))->setValueNotifyingHost (0.0f);
+            ce->advanceFrames (30);
+            img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+            f = out.getSiblingFile (out.getFileNameWithoutExtension() + "_back.png");
+            f.deleteFile(); FileOutputStream os2 (f); PNGImageFormat().writeImageToStream (img, os2);
         }
         ed.reset();
     }

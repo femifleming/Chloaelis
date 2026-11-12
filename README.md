@@ -56,6 +56,11 @@ sides together:
   while it runs and *refresh* puts on new tape), *PT2399* (the delay chip, gritty at long times)
   and *BBD* (bucket brigade, dark and crunchy). Up to 1 s, regen that self-oscillates, a
   feedback high-pass, freeze, random freeze, and slew (pitch-bending) or fade time changes.
+  The tape's hiss never cuts in or out: it fades up when you switch to tape and down when you
+  leave it, so a recording has no step.
+- **Karplus-Strong time** (ϙ): the delay becomes a tuned string. The time knob picks its note,
+  snapped to one of 25 scales (the list from Cloudfin: La Monte Young's Well-Tuned Piano, ragas,
+  maqamat, gamelan, Partch, Bohlen-Pierce, equal divisions), and regen is its sustain.
 - **Poly**: fades in up to 8 delay taps per side at irregular offsets. All the way up it
   becomes a reverb-like cloud. **Flock** lets a boids simulation move those taps' times, so
   they drift, cluster and scatter.
@@ -69,6 +74,9 @@ sides together:
 - Every switch (order, delay engine, time mode, tube type) **crossfades**: echoes ring out
   in the old setting while new sound goes through the new one, so there are no cuts.
 - It **remembers** how you left it, and **↺** resets everything.
+- **No words on its face**: every control is a letter, a mark or a picture (the **?** screen is
+  the key). And two looks: the glass HUD, or **Brick** (▦), the Windows 2000 colour scheme in
+  hard pixels.
 
 ---
 
@@ -163,7 +171,8 @@ This installs the app into `/Applications` and the Audio Unit and VST3 into
 
 ### The symbols
 
-Every control is named by a Greek letter. Press **?** (top right) for this list inside the app.
+There are no words on the face: every control is a Greek letter, a mark or a small picture.
+Press **?** (top right) for this list inside the app.
 
 **Each side**
 
@@ -174,17 +183,18 @@ Every control is named by a Greek letter. Press **?** (top right) for this list 
 | ζ | Resonance | filter resonance |
 | μ | Mode | filter mode: low pass > band pass > high pass > notch, continuously |
 | κ | Drive | tube drive |
-| I–IV | Tube type | I 12AX7 (default), II EL84, III 6L6 with sag, IV starved |
-| TUBE ON | | switches the tube in and out |
+| the dial of four arcs | Tube type | the lit arc and the wires in its lens count the type: one 12AX7 (default), two EL84, three 6L6 with sag, four starved. Click for the next (alt- or right-click for the one before), or scroll |
+| ☉ / ○ | Tube on | switches the tube in and out: a lit heater, or an empty ring |
 | τ | Time | delay time, 30 ms to 1 s |
 | φ | Regen | the delay's feedback. Past about 90% it sings on its own |
 | η | Mix | delay dry / wet |
 | ξ | Random freeze | the chance that the delay buffer gets held for a while at random moments |
-| TAPE / PT2399 / BBD | | the delay engine |
-| SLEW / FADE | | time changes either glide (pitch bends) or crossfade (no pitch change) |
-| HPF | | high-pass filter in the delay feedback |
-| FREEZE | | holds the delay buffer. On tape, a held loop slowly wears away |
-| REFRESH | | puts on fresh tape (tape engine only) |
+| reels / chip / buckets | Delay engine | three pictures: two reels (tape), a chip with bits going through it (PT2399), a row of buckets passing charge along (BBD). The one in use moves |
+| ⌢ / ⨯ | Time changes | either glide (slew: pitch bends) or cross over (fade: no pitch change) |
+| ϙ | Karplus-Strong time | the delay becomes a tuned string: see below |
+| ⌃ | High pass | high-pass filter in the delay feedback |
+| ◈ / ◇ | Freeze | holds the delay buffer. The crystal is solid while it is held (by hand or by the random freeze), hollow while it runs. On tape, a held loop slowly wears away |
+| ↻ and the reel | Fresh tape | puts on fresh tape (tape engine only). The reel beside it is the tape's condition: its pack is fat when new and thins as the tape wears |
 | Ω | Out | output level |
 | ∿ | LFO | the dial is its rate, the small glass vial its depth. The letter next to ∿ says what it moves (μ mode, τ time, κ drive) |
 
@@ -196,14 +206,44 @@ Every control is named by a Greek letter. Press **?** (top right) for this list 
 | ρ | Chaos | the attractor's rho: low wanders gently, high is wild |
 | β | Shape | the attractor's beta: reshapes the orbit |
 | Δ | Depth | how far the attractor moves the two cutoffs (up to ±3.5 octaves) |
-| FILTER › DLY / DLY › FILTER | Order | filter > tube > delay, or delay > tube > filter |
+| ω › τ / τ › ω | Order | filter > tube > delay, or delay > tube > filter (the filter's and the delay's own letters, in order) |
+| the ladder and a number | Scale | the scale the Karplus-Strong notes are tuned to, and how many notes it has. Hover to read its name, click for the list, or scroll through it |
 | ψ | Poly | up to 8 delay taps per side. All the way up is a reverb-like cloud |
 | χ | Flock | how much the boids move the poly taps' times (up to about ±0.9 octave) |
 | ∞ / ≈ | Source | which built-in recording: ∞ the base loop, ≈ the hydrophone |
 | σ | Source level | fades the built-in recording in and out |
 | Φ | Master feedback | crossed: left out > right in, right out > left in |
 | ↺ | Reset | every control back to its default (the tape's wear is kept) |
+| ▦ | Brick | switches the look (top left): the glass HUD, or Brick |
 | ? | Help | the key to all of this, inside the app |
+
+### Karplus-Strong time
+
+**ϙ** (koppa, the old Greek K) on either side turns that side's delay into a Karplus-Strong
+string: a very short, exactly tuned delay that rings at a pitch.
+
+- The **time knob (τ)** now picks a **note**. It still runs the same way round (up is longer,
+  so lower): six octaves, from 27.5 Hz at the top of the knob to 1760 Hz at the bottom, and
+  its readout shows the pitch in Hz. Notes snap to the chosen scale, whose 1/1 is A.
+- The **scale** is the small cell in the middle (a ladder and the number of notes in the
+  scale). Hover over it to read the name, click it for the list, or scroll. They are the
+  scales of Cloudfin: The Well-Tuned Piano (La Monte Young), twelve ragas, 22 shruti, three
+  maqamat, slendro and pelog, the harmonic series, Partch's 43 tones, Bohlen-Pierce, and
+  24-, 19-, 31- and 12-EDO.
+- **Regen (φ)** is the string's sustain: most of its travel is long rings, and past 100% it
+  sings on its own. **Freeze** holds the string.
+- **Poly (ψ)** adds strings on other degrees of the scale, stacked up from the note you are
+  on, so it plays a chord. **Flock (χ)** only detunes them a little.
+- The **engine** pictures set the string's colour here: PT2399 bright, tape softer, BBD dark.
+- **Slew (⌢)** glides between notes and **fade (⨯)** steps to them. The time LFO walks through
+  the scale.
+
+### The two looks
+
+**▦** (top left) switches between the glass HUD and **Brick**: the Windows 2000 "Brick" colour
+scheme, with bevelled capsules, sunk white dials, progress-bar blocks in the vials and a
+maroon graph for the filter, all in hard pixels with no blur, glow or drift. The choice is
+kept with the state.
 
 ### Playing it
 
@@ -219,6 +259,8 @@ Every control is named by a Greek letter. Press **?** (top right) for this list 
   - *Moving filter*: Δ (Lorenz depth) up, ρ (chaos) up, ζ (resonance) up.
   - *Self-playing*: Φ (master feedback) towards 90% with some regen: the two sides feed each
     other and keep going on their own.
+  - *Tuned strings*: ϙ on, φ (regen) around 90%, ψ (poly) up for a chord, and move τ or its
+    LFO to play the scale.
 - Chloaelis **remembers its last state**: a new instance starts how the last one was closed.
   In a DAW, the project's own saved settings take priority.
 
@@ -305,6 +347,7 @@ Chloaelis's code was written with Claude Code (Anthropic), working under the dir
 - **The built-in recordings.** Two of the author's own field recordings ship in the plug-in: a base recording and a hydrophone recording.
 - **The desktop app.** The drag-in sample vessel, true fullscreen on Cmd+F, remembering the last state, and a reset button.
 - **Testing.** The author reported lag (and set a 30 fps minimum), pixelation, aliasing in the blur, stepped focus and hover jitter, and had them fixed.
+- **Version 1.1.** The author asked for the tape hiss to fade rather than cut, for Karplus-Strong time tuned to Cloudfin's scales, for a Windows 2000 look (chosen as *Brick* from a set of mock-ups), for symbols in place of every word, and for the cells to sit closer together; and picked the tube dial, the engine pictures, the crystal for freeze and the reel for the tape from options drawn for them.
 - **The release.** Builds for macOS, Windows and Linux, a README, in-app help and a Homebrew install, with credit to *Splice* and *Chloe*.
 
 ## Credits and licence

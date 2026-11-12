@@ -22,8 +22,26 @@ static int diffTextPass = 0;   // 0 = labels paint normally, 1 = labels hidden, 
 // meters: each side's cells glow with its output level (accent > warm white > red).
 namespace
 {
-    const Colour white   (0xffffffff);
+    // "white" is the HUD's ink: its line and text colour. In the Brick theme it turns black.
+    Colour white         (0xffffffff);
     const Colour cell    (0xff10161b);
+
+    // Themes. 0: the glass HUD. 1: Brick, the Windows 2000 colour scheme: flat khaki, bevelled
+    // capsules and hard pixels (everything is drawn at one pixel per design pixel and snapped to
+    // the scheme's few colours: no anti-aliasing, glow, blur, perspective or drift).
+    int theme = 0;
+    inline bool brick() { return theme == 1; }
+    // How close together the cells are. The layout below is written for a 1200 x 820 field; the
+    // cells are drawn this much larger on it and the window opens this much smaller, so each cell is
+    // the size it always was and only the space between them has gone.
+    constexpr float closeness = 1.12f;
+    float density = closeness;
+    void useTheme (int t) { theme = t; white = Colour (t == 1 ? 0xff000000 : 0xffffffff); }
+    namespace bk
+    {
+        const Colour face (0xffc2bfa5), hi (0xfff4f2e4), sh (0xff8d8961), dk (0xff424020), ink (0xff000000),
+                     accL (0xff800000), accR (0xffa05a00), plotBg (0xff420000), plotLine (0xfff0c850);
+    }
 
     struct Palette { Colour field0, field1, accL, accR, mote, haze, iri; };
     // at rest: cool slate greys with a faint blue-teal cast
@@ -34,6 +52,7 @@ namespace
     // warmth 0..1 per side, from the input level: the field follows the warmer side
     void updatePalette (float warmL, float warmR)
     {
+        if (brick()) { pal = { bk::face, bk::face, bk::accL, bk::accR, bk::dk, Colour (0x00000000), bk::sh }; return; }
         const float kf = jmax (warmL, warmR);
         auto mix = [] (Colour a, Colour b, float k) { return a.interpolatedWith (b, k); };
         pal = { mix (cool.field0, copper.field0, kf), mix (cool.field1, copper.field1, kf), mix (cool.accL, copper.accL, warmL),
@@ -46,6 +65,7 @@ namespace
     Colour heat (int side, float db)
     {
         auto c = acc (side);
+        if (brick()) return c;
         c = c.interpolatedWith (Colour (0xfffff0dc), jlimit (0.0f, 1.0f, (db + 14.0f) / 10.0f));
         return c.interpolatedWith (Colour (0xffff4a3a), jlimit (0.0f, 1.0f, (db + 3.5f) / 3.5f));
     }
@@ -56,7 +76,8 @@ namespace
         static Typeface::Ptr face = Typeface::createSystemTypefaceFor (BinaryData::NunitoBold_ttf, BinaryData::NunitoBold_ttfSize);
         return face;
     }
-    Font hud (float h, bool = false)   { return Font (FontOptions (roundedBold()).withHeight (h * 1.12f).withKerningFactor (0.08f)); }   // all Nunito Bold (its digits run small: scaled up to the old size)
+    Font hud (float h, bool = false)   { if (theme == 1) return Font (FontOptions().withName ("Tahoma").withStyle ("Bold").withHeight (h * 1.34f));
+                                         return Font (FontOptions (roundedBold()).withHeight (h * 1.12f).withKerningFactor (0.08f)); }   // all Nunito Bold (its digits run small: scaled up to the old size)
 
     Point<float> polar (Point<float> c, float r, float a) { return { c.x + r * std::sin (a), c.y - r * std::cos (a) }; }
     double now() { return Time::getMillisecondCounterHiRes() * 0.001; }
@@ -86,6 +107,130 @@ namespace
         g.setColour (c); g.fillPath (d);
     }
 
+    //==========================================================================
+    // Brick. A Windows 2000 bevel on any rounded shape, turned about a pivot: raised (highlight
+    // up-left, shadow down-right) or sunk.
+    void bevel (Graphics& g, Rectangle<float> r, float rad, float angle, Point<float> pivot, bool sunk, Colour fill)
+    {
+        if (angle == 0.0f) r = r.withPosition (std::round (r.getX()), std::round (r.getY()));
+        Path p, in;
+        if (rad > 0.0f) { p.addRoundedRectangle (r, rad); in.addRoundedRectangle (r.reduced (0.5f), jmax (0.0f, rad - 0.5f)); }
+        else            { p.addRectangle (r); in.addRectangle (r.reduced (0.5f)); }
+        const auto rot = AffineTransform::rotation (angle, pivot.x, pivot.y);
+        auto lay = [&] (const Path& q, float d, Colour col) { g.setColour (col); g.fillPath (q, rot.translated (d, d)); };
+        if (sunk) { lay (p, 1.0f, bk::hi); lay (p, -1.0f, bk::sh); lay (p, 0.0f, bk::dk); lay (in, 0.5f, fill); }
+        else      { lay (p, 1.0f, bk::dk); lay (p, -1.0f, bk::hi); lay (p, 0.0f, bk::sh); lay (in, -0.5f, fill); }
+    }
+    // a pressed button's face: the one-pixel chequer of highlight and face
+    void chequer (Graphics& g, Rectangle<float> r)
+    {
+        static const Image tile = []
+        {
+            Image im (Image::ARGB, 2, 2, true, SoftwareImageType());
+            im.setPixelAt (0, 0, bk::hi); im.setPixelAt (1, 1, bk::hi); im.setPixelAt (1, 0, bk::face); im.setPixelAt (0, 1, bk::face);
+            return im;
+        }();
+        Graphics::ScopedSaveState ss (g);
+        g.setFillType (FillType (tile, AffineTransform()));
+        g.fillRect (r.toNearestInt());
+    }
+    // a sunk well filled from the bottom with progress-bar blocks up to value; mod >= 0 marks where modulation has it
+    void blockWell (Graphics& g, Rectangle<float> well, float angle, Point<float> pivot, Colour ac, float value, float mod)
+    {
+        bevel (g, well, well.getWidth() * 0.5f, angle, pivot, true, bk::hi);
+        Graphics::ScopedSaveState ss (g);
+        g.addTransform (AffineTransform::rotation (angle, pivot.x, pivot.y));
+        Path clip; clip.addRoundedRectangle (well.reduced (2.0f), well.getWidth() * 0.5f - 2.0f);
+        g.reduceClipRegion (clip);
+        const float inner = well.getHeight() - 6.0f, bottom = well.getBottom() - 3.0f;
+        const float top = bottom - jlimit (0.0f, 1.0f, value) * inner, inset = well.getWidth() > 22.0f ? 4.0f : 3.0f;
+        g.setColour (ac);
+        if (value > 0.004f)
+            for (float y = bottom; y > top - 0.5f; y -= 7.0f)
+                g.fillRect (well.getX() + inset, jmax (top, y - 5.0f), well.getWidth() - inset * 2.0f, y - jmax (top, y - 5.0f));
+        if (mod >= 0.0f && std::abs (mod - value) > 0.004f)
+        {
+            g.setColour (bk::ink);
+            g.fillRect (well.getX() + 2.0f, bottom - jlimit (0.0f, 1.0f, mod) * inner, well.getWidth() - 4.0f, 1.0f);
+        }
+    }
+    // hard pixels: snap an image (premultiplied ARGB) to the scheme's colours, with no partial coverage
+    void pixelate (Image& img)
+    {
+        static const Colour colours[] = { bk::face, bk::hi, bk::sh, bk::dk, bk::ink, bk::accL, bk::accR, bk::plotBg, bk::plotLine };
+        Image::BitmapData bd (img, Image::BitmapData::readWrite);
+        uint32 lastIn = 0;
+        PixelARGB lastOut (0, 0, 0, 0);
+        for (int y = 0; y < bd.height; ++y)
+        {
+            auto* px = reinterpret_cast<PixelARGB*> (bd.getLinePointer (y));
+            for (int x = 0; x < bd.width; ++x, ++px)
+            {
+                const uint32 v = px->getNativeARGB();
+                if (v != lastIn)
+                {
+                    lastIn = v;
+                    if (px->getAlpha() < 120) lastOut = PixelARGB (0, 0, 0, 0);
+                    else
+                    {
+                        PixelARGB u (*px);
+                        u.unpremultiply();
+                        int best = 0, bd2 = 1 << 30;
+                        for (int i = 0; i < (int) std::size (colours); ++i)
+                        {
+                            const int dr = (int) colours[i].getRed() - u.getRed(), dg = (int) colours[i].getGreen() - u.getGreen(), db = (int) colours[i].getBlue() - u.getBlue();
+                            const int d = dr * dr * 3 + dg * dg * 4 + db * db * 2;
+                            if (d < bd2) { bd2 = d; best = i; }
+                        }
+                        lastOut = colours[best].getPixelARGB();
+                    }
+                }
+                *px = lastOut;
+            }
+        }
+    }
+    // scale up by copying whole pixels (the GPU would smooth them)
+    Image nearestScale (const Image& srcImg, int dw, int dh)
+    {
+        Image out (Image::ARGB, jmax (1, dw), jmax (1, dh), false, SoftwareImageType());
+        out.setBackupEnabled (false);
+        Image::BitmapData src (srcImg, Image::BitmapData::readOnly), dst (out, Image::BitmapData::writeOnly);
+        std::vector<int> xs ((size_t) dst.width);
+        for (int x = 0; x < dst.width; ++x) xs[(size_t) x] = jmin (src.width - 1, x * src.width / dst.width);
+        for (int y = 0; y < dst.height; ++y)
+        {
+            const auto* sl = reinterpret_cast<const PixelARGB*> (src.getLinePointer (jmin (src.height - 1, y * src.height / dst.height)));
+            auto* dl = reinterpret_cast<PixelARGB*> (dst.getLinePointer (y));
+            for (int x = 0; x < dst.width; ++x) dl[x] = sl[xs[(size_t) x]];
+        }
+        return out;
+    }
+    // a one-pixel line with no anti-aliasing, optionally dotted
+    void pixLine (Image::BitmapData& bd, Point<float> a, Point<float> b, Colour col, int on = 1, int off = 0)
+    {
+        int x0 = roundToInt (a.x), y0 = roundToInt (a.y);
+        const int x1 = roundToInt (b.x), y1 = roundToInt (b.y);
+        const int dx = std::abs (x1 - x0), dy = std::abs (y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        const PixelARGB c (col.getPixelARGB());
+        int err = dx - dy;
+        for (int i = 0; i < 8192; ++i)
+        {
+            if ((off == 0 || (i % (on + off)) < on) && x0 >= 0 && y0 >= 0 && x0 < bd.width && y0 < bd.height)
+                *reinterpret_cast<PixelARGB*> (bd.getPixelPointer (x0, y0)) = c;
+            if (x0 == x1 && y0 == y1) break;
+            const int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx)  { err += dx; y0 += sy; }
+        }
+    }
+    void pixRect (Image::BitmapData& bd, int x, int y, int w, int h, Colour col)
+    {
+        const PixelARGB c (col.getPixelARGB());
+        for (int yy = jmax (0, y); yy < jmin (bd.height, y + h); ++yy)
+            for (int xx = jmax (0, x); xx < jmin (bd.width, x + w); ++xx)
+                *reinterpret_cast<PixelARGB*> (bd.getPixelPointer (xx, yy)) = c;
+    }
+
     // a soft dark capsule cell with a fuzzy edge
     void capsule (Graphics& g, Rectangle<float> r, float angle, Colour rim, float rimAlpha, float fill = 1.0f)
     {
@@ -112,6 +257,7 @@ namespace
     // side's accent along the bottom edge, a fine bright rim and a soft shadow on the field.
     void glassCapsule (Graphics& g, Rectangle<float> r, float angle, Colour ac, float glowAmt, Point<float> view)
     {
+        if (brick()) { bevel (g, r, jmin (r.getWidth(), r.getHeight()) * 0.5f, angle, r.getCentre(), false, bk::face); return; }
         Graphics::ScopedSaveState ss (g);
         const auto c = r.getCentre();
         g.addTransform (AffineTransform::rotation (angle, c.x, c.y));
@@ -164,6 +310,19 @@ namespace
     void glassVial (Graphics& g, Rectangle<float> r, float angle, Colour ac, float value, float mod,
                     float pulse, bool hover, Point<float> view, const VialMotion& mo = {})
     {
+        if (brick())
+        {
+            // a bevelled capsule with a sunk well of blocks (a small vial is only the well)
+            const auto pc = r.getCentre();
+            auto well = r;
+            if (r.getWidth() > 30.0f)
+            {
+                bevel (g, r, r.getWidth() * 0.5f, angle, pc, false, bk::face);
+                well = r.getWidth() > 64.0f ? r.reduced (8.0f) : Rectangle<float> (28.0f, 50.0f).withCentre (pc.translated (0.0f, -2.0f));
+            }
+            blockWell (g, well, angle, pc, ac, value, mod);
+            return;
+        }
         Graphics::ScopedSaveState ss (g);
         const auto c = r.getCentre();
         g.addTransform (AffineTransform::rotation (angle, c.x, c.y));
@@ -287,6 +446,24 @@ namespace
     // mod >= 0 shows where modulation has pushed it, as a ghost ring.
     void glassCollar (Graphics& g, Rectangle<float> r, float angle, Colour ac, float value, float mod, bool hover, Point<float> view)
     {
+        if (brick())
+        {
+            // a bevelled capsule, a sunk slot and a band that slides along it
+            const auto pc = r.getCentre();
+            bevel (g, r, r.getWidth() * 0.5f, angle, pc, false, bk::face);
+            const auto well = Rectangle<float> (28.0f, 50.0f).withCentre (pc.translated (0.0f, -2.0f));
+            bevel (g, well, 14.0f, angle, pc, true, bk::hi);
+            Graphics::ScopedSaveState bs (g);
+            g.addTransform (AffineTransform::rotation (angle, pc.x, pc.y));
+            const float t0 = well.getY() + 10.0f, b0 = well.getBottom() - 6.0f;
+            auto band = [&] (float v) { return Rectangle<float> (well.getX() - 3.0f, std::round (b0 - jlimit (0.0f, 1.0f, v) * (b0 - t0)) - 3.0f, well.getWidth() + 6.0f, 7.0f); };
+            if (mod >= 0.0f && std::abs (mod - value) > 0.004f) { g.setColour (bk::dk); g.drawRect (band (mod), 1.0f); }
+            const auto bd = band (value);
+            g.setColour (bk::ink); g.fillRect (bd);
+            g.setColour (ac);      g.fillRect (bd.reduced (1.0f));
+            g.setColour (bk::hi);  g.fillRect (bd.getX() + 1.0f, bd.getY() + 1.0f, bd.getWidth() - 2.0f, 1.0f);
+            return;
+        }
         Graphics::ScopedSaveState ss (g);
         const auto c = r.getCentre();
         g.addTransform (AffineTransform::rotation (angle, c.x, c.y));
@@ -391,7 +568,8 @@ namespace
         for (auto& [n, sym] : map) if (name == n) return String::fromUTF8 (sym);
         return name;
     }
-    Font greek (float h) { return Font (FontOptions().withName ("Helvetica Neue").withStyle ("Regular").withHeight (h)); }
+    Font greek (float h) { if (brick()) return Font (FontOptions().withName ("Tahoma").withStyle ("Regular").withHeight (h * 1.1f));
+                           return Font (FontOptions().withName ("Helvetica Neue").withStyle ("Regular").withHeight (h)); }
 
     // short value text: no units, no prefixes (the full text shows while the control is hovered)
     String compactValue (const String& full)
@@ -416,6 +594,15 @@ namespace
     // one face of a capsule button (lit rim + dot when on)
     void cellFace (Graphics& g, Rectangle<float> r, const String& label, bool on, bool over, Colour accent, float fontH = 10.0f)
     {
+        if (brick())
+        {
+            // a Windows 2000 push button: raised, or sunk with the chequered face when it is on
+            r = r.toNearestInt().toFloat();
+            bevel (g, r, 0.0f, 0.0f, r.getCentre(), on, bk::face);
+            if (on) chequer (g, r.reduced (2.0f));
+            txt (g, label.toUpperCase(), r.translated (on ? 1.0f : 0.0f, on ? 1.0f : 0.0f), hud (fontH, true), bk::ink);
+            return;
+        }
         capsule (g, r, 0.0f, on ? accent : white, on ? 0.95f : (over ? 0.5f : 0.22f));
         if (on)
         {
@@ -572,7 +759,8 @@ namespace
         void paint (Graphics& g) override
         {
             const float phys = g.getInternalContext().getPhysicalPixelScaleFactor();
-            const float scale = std::ceil (phys / jmax (0.1f, zoom) * 1.7f * 8.0f - 0.05f) / 8.0f;
+            const bool hard = brick();      // Brick: one pixel per design pixel, snapped to the scheme, scaled by whole pixels
+            const float scale = hard ? 1.0f : std::ceil (phys / jmax (0.1f, zoom) * 1.7f * 8.0f - 0.05f) / 8.0f;
             const auto cb = owner.getLocalBounds();
             const int iw = jmax (1, roundToInt ((float) cb.getWidth() * scale)), ih = jmax (1, roundToInt ((float) cb.getHeight() * scale));
             if (sharp.isNull() || sharp.getWidth() != iw || sharp.getHeight() != ih)
@@ -588,16 +776,26 @@ namespace
                 {
                     Graphics ig (sharp);
                     ig.addTransform (toImg);
-                    diffTextPass = differenceText ? 1 : 0;
+                    diffTextPass = (differenceText && ! hard) ? 1 : 0;
                     owner.paintEntireComponent (ig, true);
                     diffTextPass = 0;
                 }
-                if (differenceText) composeDifferenceText (toImg, iw, ih);
+                if (differenceText && ! hard) composeDifferenceText (toImg, iw, ih);
+                if (hard) pixelate (sharp);
                 ++chloaelisDbgRenders;
                 dirty = false;
                 fitDirty = true;
                 baseDirty = true;
                 smallFor = -1.0f;
+            }
+
+            if (hard)
+            {
+                const int fw = jmax (1, roundToInt ((float) cb.getWidth() * phys)), fh = jmax (1, roundToInt ((float) cb.getHeight() * phys));
+                if (fit.getWidth() != fw || fit.getHeight() != fh || fitDirty) { fit = nearestScale (sharp, fw, fh); fitDirty = false; }
+                g.setColour (Colours::black.withAlpha (owner.getAlpha()));
+                g.drawImageTransformed (fit, AffineTransform::scale ((float) cb.getWidth() / (float) fw, (float) cb.getHeight() / (float) fh), false);
+                return;
             }
 
             // Blur strength in screen px, continuous from sharp (0) upward, then quantised in
@@ -718,6 +916,13 @@ namespace
     };
     void drawGlow (Graphics& g, TintedGlow& cache, Point<float> c, float r, Colour col)
     {
+        if (brick())      // no glows in Brick: a point is a hard square
+        {
+            const float q = jlimit (1.0f, 3.0f, std::round (r * 0.2f));
+            g.setColour (col.withAlpha (1.0f));
+            g.fillRect (std::round (c.x) - q, std::round (c.y) - q, q * 2.0f, q * 2.0f);
+            return;
+        }
         g.setOpacity (col.getFloatAlpha());
         g.drawImage (cache.get (col), Rectangle<float> (c.x - r, c.y - r, r * 2, r * 2), RectanglePlacement::stretchToFit, false);
     }
@@ -780,7 +985,7 @@ namespace
                 if (std::abs (v - lastLfo) > 0.02f) { lastLfo = v; dirty = true; }
             }
             if (big) dirty = true;
-            if (vialStyle == 1)
+            if (vialStyle == 1 && ! brick())
             {
                 animate();
                 // repaint at 30 Hz when in focus; much less when the blur would hide it anyway
@@ -801,7 +1006,12 @@ namespace
             setColour (TooltipWindow::outlineColourId, white.withAlpha (0.5f));
             setColour (BubbleComponent::backgroundColourId, Colour (0xf0081218));
             setColour (BubbleComponent::outlineColourId, white.withAlpha (0.5f));
+            setColour (PopupMenu::backgroundColourId, Colour (0xf80c1216));
+            setColour (PopupMenu::textColourId, Colours::white);
+            setColour (PopupMenu::highlightedBackgroundColourId, Colours::white.withAlpha (0.16f));
+            setColour (PopupMenu::highlightedTextColourId, Colours::white);
         }
+        Font getPopupMenuFont() override { return Font (FontOptions (roundedBold()).withHeight (15.0f)); }
 
         // HUD dial: a segmented value arc, a dark lens with a glowing rim, a centre dot and a
         // pointer bead on the lens edge. Modulation shows as a second bead on the arc.
@@ -824,6 +1034,34 @@ namespace
                 {
                     const float pulse = (k->lfo != nullptr && s.getValue() > 0.0) ? jlimit (0.0f, 1.0f, k->lfo->load (std::memory_order_relaxed)) : 0.0f;
                     glassVial (g, k->vial, k->vialAngle, ac, pos, m, pulse, hover, view, k->mo);
+                }
+                return;
+            }
+
+            if (brick())
+            {
+                // a sunk white dial: the value as an arc, a hairline pointer, a square hub
+                const float rw = R - 1.0f, ra = rw - 5.0f;
+                bevel (g, Rectangle<float> (rw * 2.0f, rw * 2.0f).withCentre (c), rw, 0.0f, c, true, bk::hi);
+                Path tr; tr.addCentredArc (c.x, c.y, ra, ra, 0, a0, a1, true);
+                g.setColour (bk::face); g.strokePath (tr, PathStrokeType (mini ? 2.0f : 3.0f));
+                if (pos > 0.002f)
+                {
+                    Path v; v.addCentredArc (c.x, c.y, ra, ra, 0, a0, ang, true);
+                    g.setColour (ac); g.strokePath (v, PathStrokeType (mini ? 2.0f : 3.0f));
+                }
+                g.setColour (bk::ink);
+                g.drawLine (Line<float> (c, polar (c, rw - 3.0f, ang)), 1.3f);
+                g.setColour (ac);      g.fillRect (std::round (c.x) - 2.0f, std::round (c.y) - 2.0f, 4.0f, 4.0f);
+                g.setColour (bk::ink); g.fillRect (std::round (c.x) - 1.0f, std::round (c.y) - 1.0f, 2.0f, 2.0f);
+                if (k != nullptr && k->mod != nullptr)
+                {
+                    const float m = k->mod->load (std::memory_order_relaxed);
+                    if (std::abs (m - pos) > 0.002f)
+                    {
+                        const auto q = polar (c, ra, a0 + m * (a1 - a0));
+                        g.setColour (bk::ink); g.fillRect (std::round (q.x) - 2.0f, std::round (q.y) - 2.0f, 4.0f, 4.0f);
+                    }
                 }
                 return;
             }
@@ -909,6 +1147,9 @@ namespace
         String a, b;
         int side;
         bool firstIsOn;
+        float fontH = 10.0f;
+        String offText;             // shown instead of a while the button is off
+        bool held = false;          // show a anyway (the freeze cell fills whenever the buffer is held)
         Cell (String first, String second, int s, bool aMeansOn = true)
             : Button ({}), a (std::move (first)), b (std::move (second)), side (s), firstIsOn (aMeansOn)
         {
@@ -918,7 +1159,12 @@ namespace
         void paintButton (Graphics& g, bool over, bool down) override
         {
             auto r = getLocalBounds().toFloat().reduced (5.0f, 6.0f);
-            if (b.isEmpty()) { cellFace (g, r, a, getToggleState() || (down && ! getClickingTogglesState()), over, acc (side)); return; }
+            if (b.isEmpty())
+            {
+                const bool on = getToggleState() || (down && ! getClickingTogglesState());
+                cellFace (g, r, (! on && ! held && offText.isNotEmpty()) ? offText : a, on, over, acc (side), fontH);
+                return;
+            }
             const bool aOn = firstIsOn ? getToggleState() : ! getToggleState();
             cellFace (g, r.withWidth (r.getWidth() * 0.5f - 4.0f), a, aOn, over, acc (side));
             cellFace (g, r.withLeft (r.getCentreX() + 4.0f), b, ! aOn, over, acc (side));
@@ -945,7 +1191,7 @@ namespace
         void paint (Graphics& g) override
         {
             auto r = getLocalBounds().toFloat().reduced (5.0f, 6.0f);
-            const float gap = 6.0f, w = (r.getWidth() - gap * (float) (opts.size() - 1)) / (float) opts.size();
+            const float gap = brick() ? 0.0f : 6.0f, w = (r.getWidth() - gap * (float) (opts.size() - 1)) / (float) opts.size();
             for (int i = 0; i < opts.size(); ++i)
                 cellFace (g, { r.getX() + (w + gap) * (float) i, r.getY(), w, r.getHeight() }, opts[i], i == value, i == hover, acc (side), fontH);
         }
@@ -968,11 +1214,23 @@ namespace
         {
             auto r = getLocalBounds().toFloat().reduced (3.0f);
             const float rad = r.getHeight() * 0.5f;
-            g.setColour (Colours::black.withAlpha (0.3f)); g.fillRoundedRectangle (r, rad);
-            g.setColour (white.withAlpha (0.45f)); g.drawRoundedRectangle (r, rad, 1.0f);
-            auto in = r.reduced (rad * 0.6f, 5.0f);
-            for (int i = 1; i < 4; ++i)
-                dashed (g, { in.getX(), in.getY() + in.getHeight() * (float) i / 4.0f }, { in.getRight(), in.getY() + in.getHeight() * (float) i / 4.0f }, white.withAlpha (0.12f));
+            const bool hard = brick();
+            if (hard) bevel (g, r, 0.0f, 0.0f, r.getCentre(), true, bk::plotBg);     // (a Task Manager graph)
+            else
+            {
+                g.setColour (Colours::black.withAlpha (0.3f)); g.fillRoundedRectangle (r, rad);
+                g.setColour (white.withAlpha (0.45f)); g.drawRoundedRectangle (r, rad, 1.0f);
+            }
+            auto in = hard ? r.reduced (4.0f, 5.0f) : r.reduced (rad * 0.6f, 5.0f);
+            if (hard)
+            {
+                g.setColour (bk::accL);
+                for (int i = 0; i <= 4; ++i) g.fillRect (in.getX(), std::round (in.getY() + in.getHeight() * (float) i / 4.0f), in.getWidth(), 1.0f);
+                for (float x = in.getX() + 12.0f; x < in.getRight(); x += 12.0f) g.fillRect (std::round (x), in.getY(), 1.0f, in.getHeight());
+            }
+            else
+                for (int i = 1; i < 4; ++i)
+                    dashed (g, { in.getX(), in.getY() + in.getHeight() * (float) i / 4.0f }, { in.getRight(), in.getY() + in.getHeight() * (float) i / 4.0f }, white.withAlpha (0.12f));
             auto fx = [&] (float f) { return in.getX() + in.getWidth() * std::log (f / 20.0f) / std::log (1000.0f); };
             auto dy = [&] (float db) { return in.getY() + in.getHeight() * (1.0f - (db + 36.0f) / 54.0f); };
             const float fc = val (chl::cutoff), k = 2.0f - 1.96f * val (chl::res), m = jlimit (0.0f, 3.0f, val (chl::morph));
@@ -990,42 +1248,52 @@ namespace
                 const Point<float> q (fx (f), dy (db));
                 if (i == 0) p.startNewSubPath (q); else p.lineTo (q);
             }
-            glow (g, p, acc (side), 1.4f);
+            if (hard) { g.setColour (bk::plotLine); g.strokePath (p, PathStrokeType (1.3f)); }
+            else glow (g, p, acc (side), 1.4f);
         }
     };
 
-    // tape condition: a strip of oxide that frays and darkens as the tape ages
+    // tape condition: a reel. Its pack of tape is fat when the tape is new and thins from the
+    // outside in as it wears, down to a bare hub when it is ruined. It turns while tape is the engine.
     struct TapeStrip : public Component
     {
         ChloaelisProcessor& proc;
         int side;
-        float last = -1.0f;
+        float last = -1.0f, spin = 0.0f;
+        int frames = 0;
         bool lastActive = false;
         TapeStrip (ChloaelisProcessor& p, int s) : proc (p), side (s) { setInterceptsMouseClicks (false, false); }
         bool active() const { return proc.apvts.getRawParameterValue (chl::delayTypeId (side))->load() < 0.5f; }
         void update()
         {
             const float a = proc.tapeAge[(size_t) side].load();
-            if (std::abs (a - last) > 0.002f || active() != lastActive) { last = a; lastActive = active(); repaint(); }
+            bool dirty = std::abs (a - last) > 0.002f || active() != lastActive;
+            if (dirty) { last = a; lastActive = active(); }
+            if (lastActive) { spin += 0.03f; if (++frames % 4 == 0) dirty = true; }
+            if (dirty) repaint();
         }
         void paint (Graphics& g) override
         {
-            const auto b = getLocalBounds().toFloat();
-            const float age = jmax (0.0f, last);
-            const float al = lastActive ? 1.0f : 0.4f;
-            auto strip = b.withHeight (6.0f).withCentre ({ b.getCentreX(), b.getY() + 5.0f }).reduced (4.0f, 0.0f);
-            g.setColour (Colours::black.withAlpha (0.4f * al)); g.fillRoundedRectangle (strip.expanded (1.0f), 3.0f);
-            Random rng (0x7a9e + side);
-            const int n = 30;
-            const float sw = strip.getWidth() / (float) n;
-            for (int i = 0; i < n; ++i)
+            const auto c = getLocalBounds().toFloat().getCentre();
+            const float left = 1.0f - jlimit (0.0f, 1.0f, last), al = lastActive ? 1.0f : 0.4f;
+            const float R = 18.0f, hub = 4.5f, pack = hub + (R - 2.5f - hub) * left;
+            const bool hard = brick();
+            auto disc = [&] (float r, Colour col) { g.setColour (col); g.fillEllipse (c.x - r, c.y - r, r * 2, r * 2); };
+            auto ringAt = [&] (float r, Colour col) { g.setColour (col); g.drawEllipse (c.x - r, c.y - r, r * 2, r * 2, hard ? 1.2f : 0.9f); };
+            if (hard) bevel (g, Rectangle<float> (R * 2, R * 2).withCentre (c), R, 0.0f, c, true, bk::hi);
+            else      disc (R, Colours::black.withAlpha (0.35f * al));
+            if (left > 0.01f) disc (pack, hard ? (lastActive ? acc (side) : bk::sh) : acc (side).withMultipliedBrightness (1.0f - 0.4f * (1.0f - left)).withAlpha (0.8f * al));
+            disc (hub, hard ? bk::hi : Colour (12, 16, 19));
+            const Colour line = hard ? bk::ink : white.withAlpha (0.75f * al);
+            Path spokes;
+            for (int k = 0; k < 3; ++k)
             {
-                const float scar = rng.nextFloat() < age * 0.6f ? rng.nextFloat() * age : 0.0f;
-                g.setColour (acc (side).withMultipliedBrightness (1.0f - 0.55f * age).withAlpha ((0.85f - 0.75f * scar) * al));
-                g.fillRect (strip.getX() + sw * (float) i, strip.getY(), sw - 0.6f, strip.getHeight());
+                const float a = spin + (float) k * 2.094f;
+                spokes.addLineSegment ({ c.x + std::cos (a) * hub, c.y + std::sin (a) * hub, c.x + std::cos (a) * (R - 1.0f), c.y + std::sin (a) * (R - 1.0f) }, hard ? 1.2f : 0.9f);
             }
-            const String s = "TAPE " + String ((int) std::round ((1.0f - age) * 100.0f)) + "%";
-            txt (g, s, b.withTrimmedTop (10.0f).withHeight (12.0f), hud (8.5f, true), white.withAlpha (0.7f * al));
+            g.setColour (line.withMultipliedAlpha (hard ? 1.0f : 0.7f)); g.fillPath (spokes);
+            ringAt (hub, line);
+            if (! hard) ringAt (R, line);
         }
     };
 
@@ -1036,7 +1304,21 @@ namespace
     // combines the two by hand (only when the cell re-renders, never per frame).
     struct DiffLabel : public Label
     {
-        void paint (Graphics& g) override { if (diffTextPass != 1) Label::paint (g); }
+        void paint (Graphics& g) override
+        {
+            if (brick())
+            {
+                // (no difference blend on a flat face: plain Tahoma, black, or the label's own colour if it has one)
+                if (diffTextPass == 2) return;
+                const auto f = getFont();
+                g.setFont (f.getTypefaceName() == "Helvetica Neue" ? greek (f.getHeight()) : hud (f.getHeight() / 1.2f, true));
+                const auto c = findColour (Label::textColourId);
+                g.setColour (c.getSaturation() > 0.25f ? c.withAlpha (1.0f) : (c.getFloatAlpha() < 0.9f ? bk::dk : bk::ink));
+                g.drawFittedText (getText(), getLocalBounds().expanded (6, 2), getJustificationType(), 1, 0.7f);
+                return;
+            }
+            if (diffTextPass != 1) Label::paint (g);
+        }
     };
 
     //==========================================================================
@@ -1089,6 +1371,11 @@ namespace
         void paint (Graphics& g) override
         {
             const auto r = Rectangle<float> (cw, ch).withCentre (c());
+            if (brick())
+            {
+                if (drawCell && ! vial) bevel (g, r, jmin (cw, ch) * 0.5f, angle, c(), false, bk::face);
+                return;
+            }
             if (drawCell && vial)
             {
                 const auto gh = r.translated (std::cos (angle) * 13.0f, std::sin (angle) * 13.0f + 6.0f);
@@ -1108,6 +1395,14 @@ namespace
     // one collar ring around a capsule of width w, its top face centred at (cx, yy)
     void collarRing (Graphics& g, float cx, float yy, float w, Colour ac, bool hover)
     {
+        if (brick())
+        {
+            const Rectangle<float> band (std::round (cx - w * 0.5f) - 3.0f, std::round (yy) + 1.0f, w + 6.0f, 7.0f);
+            g.setColour (bk::ink); g.fillRect (band);
+            g.setColour (ac);      g.fillRect (band.reduced (1.0f));
+            g.setColour (bk::hi);  g.fillRect (band.getX() + 1.0f, band.getY() + 1.0f, band.getWidth() - 2.0f, 1.0f);
+            return;
+        }
         const float rw = w + 9.0f, rh = 10.0f, fh = 6.0f, rx = cx - rw * 0.5f;
         ColourGradient bg (ac.withMultipliedBrightness (0.45f), rx, yy, ac.withMultipliedBrightness (0.45f), rx + rw, yy, false);
         bg.addColour (0.25, ac.withMultipliedBrightness (1.15f));
@@ -1257,7 +1552,7 @@ namespace
 
         void paint (Graphics& g) override
         {
-            g.fillAll (Colour (0xf2080c10));
+            g.fillAll (brick() ? bk::face : Colour (0xf2080c10));
             const auto area = getLocalBounds().toFloat().reduced (70.0f, 46.0f);
             txt (g, String::fromUTF8 ("CHLOAELIS  \xc2\xb7  HELP"), area.withHeight (30), greek (24.0f).withExtraKerningFactor (0.3f), white);
             txt (g, "CLICK ANYWHERE TO CLOSE", area.withHeight (30).translated (0, 28), hud (9.5f), white.withAlpha (0.55f));
@@ -1269,8 +1564,14 @@ namespace
                 { "\xce\xb6", "resonance" },
                 { "\xce\xbc", "filter mode: low pass > band pass > high pass > notch" },
                 { "\xce\xba", "tube drive" },
-                { "I-IV", "tube type: I 12AX7 (default), II EL84, III 6L6 with sag, IV starved" },
+                { "\xe2\x98\x89", "tube on (an empty ring when it is off)" },
+                { "I-IV", "tube type, the dial of four arcs: one wire 12AX7, two EL84, three 6L6 with sag, four starved" },
                 { "\xcf\x84", "delay time" },
+                { "\xe2\x8c\xa2 \xe2\xa8\xaf", "time changes: glide in pitch (slew), or cross over (fade)" },
+                { "\xe2\x8c\x83", "high pass in the delay's feedback" },
+                { "\xe2\x86\xbb", "put on fresh tape (the reel beside it thins as the tape wears)" },
+                { "\xe2\x97\x88", "freeze: the crystal is solid while the buffer is held, hollow while it runs" },
+                { "\xcf\x99", "karplus: time becomes a string's pitch, tuned to the scale in the middle (regen is its sustain)" },
                 { "\xcf\x86", "regen: the delay's feedback (past ~90% it sings on its own)" },
                 { "\xce\xb7", "delay mix, dry to wet" },
                 { "\xce\xbe", "random freeze: the chance the buffer gets held at random" },
@@ -1281,6 +1582,7 @@ namespace
                 { "\xcf\x81", "Lorenz chaos" },
                 { "\xce\xb2", "Lorenz shape" },
                 { "\xce\x94", "how far the Lorenz attractor moves both cutoffs" },
+                { "\xcf\x89\xe2\x80\xba\xcf\x84", "order: filter then delay, or delay then filter" },
                 { "\xcf\x88", "poly: up to 8 delay taps per side, a reverb-like cloud at the top" },
                 { "\xcf\x87", "flock: a boids swarm moves the poly taps' times" },
                 { "\xcf\x83", "level of the built-in recording (fade it in and out)" },
@@ -1293,7 +1595,7 @@ namespace
                 txt (g, head, r.removeFromTop (24), hud (11.0f), white.withAlpha (0.8f), Justification::centredLeft);
                 for (int i = 0; i < n; ++i)
                 {
-                    auto line = r.removeFromTop (31);
+                    auto line = r.removeFromTop (27);
                     txt (g, String::fromUTF8 (rows[i].sym), line.removeFromLeft (56), greek (19.0f), white, Justification::centredLeft);
                     g.setFont (hud (11.5f)); g.setColour (white.withAlpha (0.85f));
                     g.drawFittedText (String::fromUTF8 (rows[i].text).toUpperCase(), line.toNearestInt(), Justification::centredLeft, 2, 0.8f);
@@ -1303,7 +1605,7 @@ namespace
             auto left = body.removeFromLeft (body.getWidth() * 0.5f).reduced (10, 0);
             auto right = body.reduced (10, 0);
             column (left, "EACH SIDE  (LEFT IN > LEFT OUT, RIGHT IN > RIGHT OUT)", strip, (int) std::size (strip));
-            column (right.removeFromTop (24 + 31 * (int) std::size (shared)), "SHARED (MIDDLE)", shared, (int) std::size (shared));
+            column (right.removeFromTop (24 + 27 * (int) std::size (shared)), "SHARED (MIDDLE)", shared, (int) std::size (shared));
 
             right.removeFromTop (14);
             txt (g, "HOW TO PLAY", right.removeFromTop (24), hud (11.0f), white.withAlpha (0.8f), Justification::centredLeft);
@@ -1338,16 +1640,21 @@ namespace
             const auto p1 = p0 + Point<float> (sx * 14.0f, -16.0f);
             const auto p2 = p1 + Point<float> (sx * 54.0f, 0.0f);
             g.setColour (white.withAlpha (0.7f));
-            g.drawLine (Line<float> (p0, p1), 0.8f);
-            g.drawLine (Line<float> (p1, p2), 0.8f);
+            if (brick())
+            {
+                // (hard pixels: a one-pixel line on the grid)
+                g.drawLine (Line<float> (p0, p1), 1.15f);
+                g.fillRect (jmin (p1.x, p2.x), std::round (p1.y), std::abs (p2.x - p1.x), 1.0f);
+            }
+            else
+            {
+                g.drawLine (Line<float> (p0, p1), 0.8f);
+                g.drawLine (Line<float> (p1, p2), 0.8f);
+            }
             g.fillEllipse (p0.x - 1.6f, p0.y - 1.6f, 3.2f, 3.2f);
             const Rectangle<float> tr = sx > 0 ? Rectangle<float> (p1.x + 2.0f, p1.y - 15.0f, 230.0f, 13.0f) : Rectangle<float> (p1.x - 232.0f, p1.y - 15.0f, 230.0f, 13.0f);
             const auto j = sx > 0 ? Justification::centredLeft : Justification::centredRight;
-            g.setFont (hud (10.0f, true));
-            g.setColour (Colours::black.withAlpha (0.5f));
-            g.drawText (n.title.toUpperCase(), tr.translated (0.0f, 1.0f), j, false);
-            txt (g, n.title.toUpperCase(), tr, hud (10.0f, true), white, j);
-            txt (g, n.sub.toUpperCase(), tr.translated (0, 17.0f).withHeight (11.0f), hud (8.0f), white.withAlpha (0.7f), j);
+            ignoreUnused (tr, j);      // (no words on the face: the line alone marks where a section starts)
         }
 
         void paint (Graphics& g) override
@@ -1360,19 +1667,25 @@ namespace
                 if (n->title.isEmpty()) continue;
                 const float sx = n->home.x > W * 0.55f ? -1.0f : 1.0f;
                 auto& cc = cache[i];
-                const String key = n->title + "|" + n->sub;
+                const bool hard = brick();
+                const String key = n->title + "|" + n->sub + (hard ? "|brick" : "");
                 if (cc.key != key || std::abs (cc.scale - scale) > 0.001f || cc.img.isNull())
                 {
                     cc.key = key; cc.scale = scale;
-                    cc.img = Image (Image::ARGB, roundToInt (iw * scale), roundToInt (ih * scale), true, SoftwareImageType());
-                    Graphics ig (cc.img);
-                    ig.addTransform (AffineTransform::scale (scale));
-                    render (ig, *n, sx);
+                    const float rs = hard ? 1.0f : scale;
+                    cc.img = Image (Image::ARGB, roundToInt (iw * rs), roundToInt (ih * rs), true, SoftwareImageType());
+                    {
+                        Graphics ig (cc.img);
+                        ig.addTransform (AffineTransform::scale (rs));
+                        render (ig, *n, sx);
+                    }
+                    if (hard) { pixelate (cc.img); cc.img = nearestScale (cc.img, roundToInt (iw * scale), roundToInt (ih * scale)); }
                 }
                 const auto c = n->getBounds().toFloat().getCentre().transformedBy (n->getTransform());
-                const float a = (1.0f - 0.65f * (blurAt ? jlimit (0.0f, 1.0f, blurAt (c) / 6.0f) : 0.0f)) * n->getAlpha();
+                const float a = hard ? n->getAlpha() : (1.0f - 0.65f * (blurAt ? jlimit (0.0f, 1.0f, blurAt (c) / 6.0f) : 0.0f)) * n->getAlpha();
                 const float rr = jmax (n->cw, n->ch) * 0.5f * n->persp;
-                const auto p0 = c + Point<float> (sx * rr * 0.55f, -n->ch * n->persp * 0.5f * 0.85f - 4.0f);
+                auto p0 = c + Point<float> (sx * rr * 0.55f, -n->ch * n->persp * 0.5f * 0.85f - 4.0f);
+                if (hard) p0 = { std::round (p0.x), std::round (p0.y) };
                 g.setOpacity (a);
                 g.drawImage (cc.img, Rectangle<float> (p0.x - iw * 0.5f, p0.y - (ih - 6.0f), iw, ih), RectanglePlacement::stretchToFit, false);
             }
@@ -1389,6 +1702,8 @@ namespace
         float db[2] { -90.0f, -90.0f };
         std::function<float (Point<float>)> blurAt;
         TintedGlow glows[3];
+        Image hardImg;              // Brick: the links never move, so they are drawn once, as dotted pixel lines
+        float hardScale = 0.0f;
         Links() { setInterceptsMouseClicks (false, false); }
         static Point<float> centreOf (Component* c) { return c->getBounds().toFloat().getCentre().transformedBy (c->getTransform()); }
         float activity (int side) const
@@ -1403,6 +1718,30 @@ namespace
         }
         void paint (Graphics& g) override
         {
+            if (brick())
+            {
+                const float phys = g.getInternalContext().getPhysicalPixelScaleFactor();
+                if (hardImg.isNull() || std::abs (phys - hardScale) > 0.001f)
+                {
+                    Image im (Image::ARGB, (int) W, (int) H, true, SoftwareImageType());
+                    {
+                        Image::BitmapData bd (im, Image::BitmapData::readWrite);
+                        for (auto& l : links)
+                        {
+                            const auto a = centreOf (l.a), b = centreOf (l.b);
+                            const float len = a.getDistanceFrom (b);
+                            if (len < 70.0f) continue;
+                            const auto u = (b - a) / len;
+                            pixLine (bd, a + u * (30.0f * density), b - u * (30.0f * density), bk::sh, 2, 3);
+                        }
+                    }
+                    hardScale = phys;
+                    hardImg = nearestScale (im, roundToInt (W * phys), roundToInt (H * phys));
+                }
+                g.setOpacity (1.0f);
+                g.drawImageTransformed (hardImg, AffineTransform::scale (W / (float) hardImg.getWidth(), H / (float) hardImg.getHeight()), false);
+                return;
+            }
             for (auto* n : nodes)
             {
                 const float act = activity (n->side) * n->getAlpha();
@@ -1420,7 +1759,7 @@ namespace
                 if (len < 1.0f) continue;
                 const auto u = d / len;
                 // start and end at the cell edges
-                const auto s0 = a + u * 34.0f, s1 = b - u * 34.0f;
+                const auto s0 = a + u * (34.0f * density), s1 = b - u * (34.0f * density);
                 if ((s1 - s0).getDotProduct (u) <= 0) continue;
                 const float act = activity (l.side);
                 const auto col = white.interpolatedWith (levelColour (l.side), 0.25f + 0.6f * act);
@@ -1447,6 +1786,7 @@ namespace
         void paint (Graphics& g) override
         {
             // the field is centred on the design area, and reaches past it on a wider / taller window
+            if (brick()) { g.fillAll (bk::face); return; }
             const float fw = (float) getWidth(), fh = (float) getHeight(), ox = (fw - W) * 0.5f, oy = (fh - H) * 0.5f;
             g.setGradientFill (ColourGradient (pal.field1, ox + W * 0.48f, oy + H * 0.38f, pal.field0, ox + W * 0.95f + (fw - W) * 0.3f, oy + H * 1.05f + (fh - H) * 0.3f, true));
             g.fillAll();
@@ -1479,6 +1819,7 @@ namespace
         }
         void paint (Graphics& g) override
         {
+            if (brick()) return;
             const double t = now();
             for (auto& d : discs)
             {
@@ -1578,8 +1919,48 @@ namespace
             const float f = 1.0f / (1.0f - d * 0.12f);
             return { W * 0.5f + x1 * sc * f, 405.0f - z2 * sc * f };
         }
+        Image hardUp;               // Brick: the picture in hard pixels, scaled up by whole pixels
+        float phys = 1.0f;
+        void renderHard()
+        {
+            // the orbit as dots, the real path as a one-pixel thread, the head as a square with cross-hairs
+            const int iw = roundToInt (rw), ih = roundToInt (rh);
+            if (img.getWidth() != iw || img.getHeight() != ih)
+            {
+                img = Image (Image::ARGB, iw, ih, true, SoftwareImageType());
+                img.setBackupEnabled (false);
+            }
+            img.clear (img.getBounds());
+            trailPaths.clear();
+            {
+                Image::BitmapData bd (img, Image::BitmapData::readWrite);
+                const Point<float> o (rx, ry);
+                float nr;
+                for (size_t k = 0; k < gCount; k += 2)
+                {
+                    const auto p = project (ghost[(gHead + ghost.size() - gCount + k) % ghost.size()], nr) - o;
+                    pixRect (bd, roundToInt (p.x), roundToInt (p.y), 1, 1, bk::sh);
+                }
+                Point<float> prev;
+                for (size_t k = 0; k < tCount; ++k)
+                {
+                    const auto p = project (trail[(tHead + trail.size() - tCount + k) % trail.size()], nr) - o;
+                    if (k > 0) pixLine (bd, prev, p, k * 3 < tCount ? bk::dk : bk::accL);
+                    prev = p;
+                }
+                if (tCount > 0)
+                {
+                    headPos = prev + o;
+                    const int hx = roundToInt (prev.x), hy = roundToInt (prev.y);
+                    pixRect (bd, hx - 5, hy, 11, 1, bk::accL); pixRect (bd, hx, hy - 5, 1, 11, bk::accL);
+                    pixRect (bd, hx - 2, hy - 2, 5, 5, bk::ink);
+                }
+            }
+            hardUp = nearestScale (img, roundToInt (rw * phys), roundToInt (rh * phys));
+        }
         void render()
         {
+            if (brick()) { renderHard(); return; }
             const int iw = roundToInt (rw * hs), ih = roundToInt (rh * hs);
             if (img.getWidth() != iw || img.getHeight() != ih)
             {
@@ -1656,7 +2037,27 @@ namespace
         {
             // render the dust at the screen's pixel density next frame (capped, it's CPU work)
             hs = jlimit (0.5f, 2.0f, std::ceil (g.getInternalContext().getPhysicalPixelScaleFactor() * 4.0f) / 4.0f);
+            phys = jlimit (0.5f, 4.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
             g.setOpacity (1.0f);
+            if (brick())
+            {
+                if (hardUp.isValid())
+                    g.drawImageTransformed (hardUp, AffineTransform::scale (rw / (float) hardUp.getWidth(), rh / (float) hardUp.getHeight()).translated (rx, ry), false);
+                // the sends: head -> each cutoff, dotted, with a block where it is pushing
+                for (int s = 0; s < 2; ++s)
+                {
+                    if (cut[s] == nullptr || depth < 0.004f) continue;
+                    const auto b = Links::centreOf (cut[s]);
+                    const float len = b.getDistanceFrom (headPos);
+                    if (len < 60.0f) continue;
+                    const auto u = (b - headPos) / len;
+                    const auto s0 = headPos + u * 12.0f, s1 = b - u * 38.0f;
+                    dashed (g, s0, s1, acc (s), 1.0f);
+                    const auto bead = s0 + (s1 - s0) * (0.5f + 0.45f * send[s]);
+                    g.setColour (acc (s)); g.fillRect (std::round (bead.x) - 3.0f, std::round (bead.y) - 3.0f, 6.0f, 6.0f);
+                }
+                return;
+            }
             if (img.isValid())
                 g.drawImageTransformed (img, AffineTransform::scale ((rw / (float) img.getWidth()), rh / (float) img.getHeight()).translated (rx + parallax.x, ry + parallax.y), false);
             {
@@ -1735,6 +2136,7 @@ namespace
         }
         void render()
         {
+            if (brick()) return;        // (drawn straight in paint, as squares)
             const int iw = roundToInt (rw * hs), ih = roundToInt (rh * hs);
             if (img.getWidth() != iw || img.getHeight() != ih)
             {
@@ -1779,6 +2181,23 @@ namespace
         {
             hs = jlimit (0.5f, 2.0f, std::ceil (g.getInternalContext().getPhysicalPixelScaleFactor() * 4.0f) / 4.0f);
             if (count == 0) return;
+            if (brick())
+            {
+                // each bird a square in its side's colour, with a few crumbs behind it
+                for (int i = 0; i < n; ++i)
+                {
+                    g.setColour (bk::sh);
+                    for (int k = 12; k < jmin (count, 60); k += 12)
+                    {
+                        const auto q = trail[i][(head + hist - 1 - k) % hist];
+                        g.fillRect (std::round (q.x), std::round (q.y), 2.0f, 2.0f);
+                    }
+                    const auto p = headOf (i);
+                    g.setColour (amt > 0.004f ? acc (i < n / 2 ? 0 : 1) : bk::sh);
+                    g.fillRect (std::round (p.x) - 2.0f, std::round (p.y) - 2.0f, 4.0f, 4.0f);
+                }
+                return;
+            }
             Graphics::ScopedSaveState ss (g);
             g.addTransform (AffineTransform::translation (parallax));
             g.setOpacity (1.0f);
@@ -2127,13 +2546,13 @@ namespace
             listener (g, me, 9.0f * jmin (1.5f, ps()), std::atan2 (ahead.x - me.x, me.y - ahead.y));
             if (! vec()) return;
             g.setFont (hud (9.0f * jmin (1.4f, ps())));
-            for (auto [v, t] : { std::pair { fp::ambi::Vec3 { 1.08f, 0, 0 }, "AHEAD" }, std::pair { fp::ambi::Vec3 { 0, 1.08f, 0 }, "LEFT" },
-                                 std::pair { fp::ambi::Vec3 { 0, -1.08f, 0 }, "RIGHT" }, std::pair { fp::ambi::Vec3 { -1.08f, 0, 0 }, "BEHIND" } })
+            for (auto [v, t] : { std::pair { fp::ambi::Vec3 { 1.08f, 0, 0 }, "\xe2\x97\x93" }, std::pair { fp::ambi::Vec3 { 0, 1.08f, 0 }, "\xe2\x97\x90" },
+                                 std::pair { fp::ambi::Vec3 { 0, -1.08f, 0 }, "\xe2\x97\x91" }, std::pair { fp::ambi::Vec3 { -1.08f, 0, 0 }, "\xe2\x97\x92" } })
             {
                 float n;
                 const auto p = orrery (v, n);
                 g.setColour (white.withAlpha (0.25f + 0.35f * (n + 1.0f) * 0.5f));
-                g.drawText (t, Rectangle<float> (70, 12).withCentre (p), Justification::centred);
+                g.drawText (String::fromUTF8 (t), Rectangle<float> (70, 12).withCentre (p), Justification::centred);
             }
         }
 
@@ -2175,11 +2594,11 @@ namespace
             if (! vec()) return;
             g.setFont (hud (9.0f));
             g.setColour (white.withAlpha (0.45f));
-            for (auto [az, t] : { std::pair { 0.0f, "AHEAD" }, std::pair { 1.5708f, "LEFT" }, std::pair { -1.5708f, "RIGHT" } })
-                g.drawText (t, Rectangle<float> (70, 12).withCentre (hammer (fp::ambi::fromAzEl (az, 0.0f)).translated (0, 14)), Justification::centred);
-            g.drawText ("BEHIND", Rectangle<float> (70, 12).withCentre ({ cx - 350.0f * ps(), cy }), Justification::centred);
-            g.drawText ("BEHIND", Rectangle<float> (70, 12).withCentre ({ cx + 350.0f * ps(), cy }), Justification::centred);
-            g.drawText ("UP", Rectangle<float> (70, 12).withCentre ({ cx, cy - 172.0f * ps() }), Justification::centred);
+            for (auto [az, t] : { std::pair { 0.0f, "\xe2\x97\x93" }, std::pair { 1.5708f, "\xe2\x97\x90" }, std::pair { -1.5708f, "\xe2\x97\x91" } })
+                g.drawText (String::fromUTF8 (t), Rectangle<float> (70, 12).withCentre (hammer (fp::ambi::fromAzEl (az, 0.0f)).translated (0, 14)), Justification::centred);
+            g.drawText (String::fromUTF8 ("\xe2\x97\x92"), Rectangle<float> (70, 12).withCentre ({ cx - 350.0f * ps(), cy }), Justification::centred);
+            g.drawText (String::fromUTF8 ("\xe2\x97\x92"), Rectangle<float> (70, 12).withCentre ({ cx + 350.0f * ps(), cy }), Justification::centred);
+            g.drawText (String::fromUTF8 ("\xe2\x96\xb3"), Rectangle<float> (70, 12).withCentre ({ cx, cy - 172.0f * ps() }), Justification::centred);
         }
 
         void paintRadar (Graphics& g)
@@ -2235,7 +2654,7 @@ namespace
             listener (g, me, 9.0f, 0.0f);
             if (! vec()) return;
             g.setColour (white.withAlpha (0.45f));
-            g.drawText ("AHEAD", Rectangle<float> (70, 12).withCentre (me.translated (0, -R - 12.0f)), Justification::centred);
+            g.drawText (String::fromUTF8 ("\xe2\x97\x93"), Rectangle<float> (70, 12).withCentre (me.translated (0, -R - 12.0f)), Justification::centred);
         }
     };
 
@@ -2279,13 +2698,13 @@ namespace
         }
         void paint (Graphics& g) override
         {
-            g.fillAll (Colour (0xf2080c10));
+            g.fillAll (brick() ? bk::face : Colour (0xf2080c10));
             ColourGradient glow (pal.haze.withAlpha (0.35f), W * 0.5f, H * 0.5f, Colours::transparentBlack, W * 0.5f + 520.0f, H * 0.5f, true);
             g.setGradientFill (glow);
             g.fillRect (getLocalBounds());
-            static const char* names[] = { "GLOBE", "MAP", "RADAR" };
+            static const char* names[] = { "\xe2\x98\x89", "\xe2\x8a\x9e", "\xe2\x97\x8e" };
             for (int i = 0; i < 3; ++i)
-                cellFace (g, tab (i), names[i], view.mode == i + 1, false, acc (-1), 9.5f);
+                cellFace (g, tab (i), String::fromUTF8 (names[i]), view.mode == i + 1, false, acc (-1), 14.0f);
             cellFace (g, closeBox(), String::fromUTF8 ("\xc3\x97"), false, false, acc (-1), 13.0f);
             g.setFont (hud (9.0f));
             g.setColour (white.withAlpha (0.5f));
@@ -2348,6 +2767,7 @@ namespace
         void advance() { frame = (frame + 1) % (int) tiles.size(); repaint(); }
         void paint (Graphics& g) override
         {
+            if (brick()) return;
             g.setFillType (FillType (tiles[(size_t) frame], AffineTransform::scale (0.5f).translated ((float) ((frame * 37) % 160), (float) ((frame * 71) % 160))));
             g.fillRect (getLocalBounds());
             g.setColour (Colours::white.withAlpha (0.025f));
@@ -2365,12 +2785,241 @@ namespace
         void paint (Graphics& g) override
         {
             const auto r = getLocalBounds().toFloat();
+            if (brick())
+            {
+                g.setFont (Font (FontOptions().withName ("Tahoma").withStyle ("Regular").withHeight (25.0f).withKerningFactor (0.45f)));
+                g.setColour (bk::sh);
+                g.drawText (String::fromUTF8 ("\xcf\x9e"), r.withTrimmedBottom (14), Justification::centred, false);
+                return;
+            }
             const auto f = Font (FontOptions().withName ("Helvetica Neue").withStyle ("UltraLight").withHeight (27.0f).withKerningFactor (0.4f));
             g.setFont (f);
             g.setColour (white.withAlpha (0.25f));
-            g.drawText ("CHLOAEILIUS", r.withTrimmedBottom (14).translated (0, 1), Justification::centred, false);
+            g.drawText (String::fromUTF8 ("\xcf\x9e"), r.withTrimmedBottom (14).translated (0, 1), Justification::centred, false);
             g.setColour (white);
-            g.drawText ("CHLOAEILIUS", r.withTrimmedBottom (14), Justification::centred, false);
+            g.drawText (String::fromUTF8 ("\xcf\x9e"), r.withTrimmedBottom (14), Justification::centred, false);
+        }
+    };
+
+    // Tube type: a plate dial. Four arcs round a lens, the chosen one bright with a bead on it, and
+    // in the lens its count as wires (one: 12AX7, two: EL84, three: 6L6, four: starved). Click for
+    // the next (alt- or right-click for the one before), or scroll.
+    struct TubeDial : public Component, public SettableTooltipClient
+    {
+        int side, value = 0;
+        float wheel = 0.0f;
+        std::unique_ptr<ParameterAttachment> att;
+        TubeDial (RangedAudioParameter& p, int s) : side (s)
+        {
+            att = std::make_unique<ParameterAttachment> (p, [this] (float v) { value = jlimit (0, 3, (int) std::lround (v)); repaint(); });
+            att->sendInitialUpdate();
+            setMouseCursor (MouseCursor::PointingHandCursor);
+        }
+        void step (int d) { att->setValueAsCompleteGesture ((float) ((value + d + 4) % 4)); }
+        void mouseDown (const MouseEvent& e) override { step (e.mods.isPopupMenu() || e.mods.isAltDown() ? -1 : 1); }
+        void mouseEnter (const MouseEvent&) override { repaint(); }
+        void mouseExit (const MouseEvent&) override  { repaint(); }
+        void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+        {
+            wheel += w.deltaY;
+            if (std::abs (wheel) < 0.12f) return;
+            step (wheel < 0.0f ? 1 : -1);
+            wheel = 0.0f;
+        }
+        void paint (Graphics& g) override
+        {
+            const auto c = getLocalBounds().toFloat().getCentre();
+            const Colour ac = acc (side);
+            const bool hard = brick(), hover = isMouseOver();
+            const float a0 = MathConstants<float>::pi * 1.25f, span = MathConstants<float>::pi * 0.375f, R = 18.0f, ri = 10.5f;
+            if (hard) bevel (g, Rectangle<float> (48.0f, 48.0f).withCentre (c), 24.0f, 0.0f, c, true, bk::hi);
+            for (int i = 0; i < 4; ++i)
+            {
+                Path arc; arc.addCentredArc (c.x, c.y, R, R, 0, a0 + (float) i * span + 0.13f, a0 + (float) (i + 1) * span - 0.13f, true);
+                const bool on = i == value;
+                if (hard) { g.setColour (on ? ac : bk::face); g.strokePath (arc, PathStrokeType (3.0f)); continue; }
+                if (on) { g.setColour (ac.withAlpha (0.3f)); g.strokePath (arc, PathStrokeType (7.0f, PathStrokeType::curved, PathStrokeType::rounded)); }
+                g.setColour (on ? white : white.withAlpha (0.2f));
+                g.strokePath (arc, PathStrokeType (on ? 2.8f : 2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+            }
+            if (! hard)
+            {
+                g.setColour (Colours::black.withAlpha (0.35f));
+                g.fillEllipse (c.x - ri, c.y - ri, ri * 2, ri * 2);
+                glowCircle (g, c, ri, (hover ? ac : white).withAlpha (0.95f), 1.0f);
+            }
+            else { g.setColour (bk::sh); g.drawEllipse (c.x - ri, c.y - ri, ri * 2, ri * 2, 1.0f); }
+            // the count, as wires
+            g.setColour (hard ? bk::ink : white);
+            for (int k = 0; k <= value; ++k)
+                g.fillRect (std::round (c.x + ((float) k - (float) value * 0.5f) * 3.6f) - 0.6f, c.y - 3.5f, 1.2f, 7.0f);
+            // the bead, on the lens beside the lit arc
+            const auto d = polar (c, ri, a0 + ((float) value + 0.5f) * span);
+            if (hard) { g.setColour (bk::ink); g.fillRect (std::round (d.x) - 2.0f, std::round (d.y) - 2.0f, 4.0f, 4.0f); }
+            else
+            {
+                g.setColour (ac.withAlpha (0.35f)); g.fillEllipse (d.x - 4.0f, d.y - 4.0f, 8.0f, 8.0f);
+                g.setColour (white); g.fillEllipse (d.x - 2.1f, d.y - 2.1f, 4.2f, 4.2f);
+            }
+        }
+    };
+
+    // Delay engine: three glass cells with the thing itself in each. Tape: two reels (turning while
+    // it is the one in use); PT2399: the chip, bits going through its memory; BBD: a row of buckets
+    // passing their charge along.
+    struct EngineSeg : public Component, public SettableTooltipClient
+    {
+        int side, value = 1, hover = -1, frames = 0;
+        float t = 0.0f;
+        std::unique_ptr<ParameterAttachment> att;
+        EngineSeg (RangedAudioParameter& p, int s) : side (s)
+        {
+            att = std::make_unique<ParameterAttachment> (p, [this] (float v) { value = jlimit (0, 2, (int) std::lround (v)); repaint(); });
+            att->sendInitialUpdate();
+            setMouseCursor (MouseCursor::PointingHandCursor);
+        }
+        void advance (float dt) { t += dt; if (++frames % 4 == 0) repaint(); }
+        int indexAt (float x) const { return jlimit (0, 2, (int) (x / ((float) getWidth() / 3.0f))); }
+        void mouseDown (const MouseEvent& e) override { att->setValueAsCompleteGesture ((float) indexAt (e.position.x)); }
+        void mouseMove (const MouseEvent& e) override { const int h = indexAt (e.position.x); if (h != hover) { hover = h; repaint(); } }
+        void mouseExit (const MouseEvent&) override { hover = -1; repaint(); }
+
+        static void reels (Graphics& g, Point<float> c, float t, Colour line, Colour hot)
+        {
+            Path rings, spokes, tape;
+            for (float dx : { -9.0f, 9.0f })
+            {
+                const Point<float> h (c.x + dx, c.y - 2.0f);
+                rings.addEllipse (h.x - 7.0f, h.y - 7.0f, 14.0f, 14.0f);
+                rings.addEllipse (h.x - 2.0f, h.y - 2.0f, 4.0f, 4.0f);
+                for (int k = 0; k < 3; ++k)
+                {
+                    const float a = t * 2.2f + (float) k * 2.094f + dx;
+                    spokes.addLineSegment ({ h.x + std::cos (a) * 2.4f, h.y + std::sin (a) * 2.4f, h.x + std::cos (a) * 6.2f, h.y + std::sin (a) * 6.2f }, 1.0f);
+                }
+            }
+            tape.startNewSubPath (c.x - 15.0f, c.y + 2.0f); tape.lineTo (c.x - 7.0f, c.y + 9.0f); tape.lineTo (c.x + 7.0f, c.y + 9.0f); tape.lineTo (c.x + 15.0f, c.y + 2.0f);
+            g.setColour (line); g.strokePath (rings, PathStrokeType (1.1f)); g.fillPath (spokes);
+            g.setColour (hot);  g.strokePath (tape, PathStrokeType (1.1f));
+        }
+        static void chip (Graphics& g, Point<float> c, float t, Colour line, Colour hot, bool on)
+        {
+            const float x = std::round (c.x), y = std::round (c.y);
+            g.setColour (line);
+            g.drawRect (x - 13.0f, y - 6.0f, 26.0f, 12.0f, 1.1f);
+            for (int k = 0; k < 4; ++k) { const float lx = x - 9.0f + (float) k * 6.0f; g.fillRect (lx, y - 10.0f, 1.1f, 4.0f); g.fillRect (lx, y + 6.0f, 1.1f, 4.0f); }
+            g.fillRect (x - 12.0f, y - 1.5f, 2.0f, 3.0f);
+            for (int k = 0; k < 5; ++k)
+            {
+                const bool bit = std::sin ((float) k * 12.9f + std::floor (on ? t * 6.0f : 0.0f) * 3.7f) > 0.0f;
+                g.setColour (bit ? hot : line.withMultipliedAlpha (0.3f));
+                g.fillRect (x - 7.0f + (float) k * 3.4f, y - 2.0f, 2.4f, 4.0f);
+            }
+        }
+        static void buckets (Graphics& g, Point<float> c, float t, Colour line, Colour hot, bool on)
+        {
+            const float x = std::round (c.x), y = std::round (c.y);
+            for (int k = 0; k < 5; ++k)
+            {
+                const float bx = x - 14.0f + (float) k * 7.0f;
+                const float lvl = 0.5f + 0.5f * std::sin (((float) k - std::floor (on ? t * 5.0f : 0.0f)) * 1.1f);
+                g.setColour (hot.withMultipliedAlpha (on ? 0.9f : 0.5f));
+                g.fillRect (bx - 2.0f, y + 6.0f - 11.0f * lvl, 4.0f, 11.0f * lvl);
+                g.setColour (line);
+                g.fillRect (bx - 3.0f, y - 6.0f, 1.0f, 13.0f); g.fillRect (bx + 2.0f, y - 6.0f, 1.0f, 13.0f); g.fillRect (bx - 3.0f, y + 6.0f, 6.0f, 1.0f);
+            }
+        }
+        void paint (Graphics& g) override
+        {
+            const auto r = getLocalBounds().toFloat().reduced (5.0f, 5.0f);
+            const bool hard = brick();
+            const float gap = hard ? 0.0f : 6.0f, w = (r.getWidth() - gap * 2.0f) / 3.0f;
+            for (int i = 0; i < 3; ++i)
+            {
+                auto cr = Rectangle<float> (r.getX() + (w + gap) * (float) i, r.getY(), w, r.getHeight());
+                const bool on = i == value;
+                if (hard) { cr = cr.toNearestInt().toFloat(); bevel (g, cr, 0.0f, 0.0f, cr.getCentre(), on, bk::face); if (on) chequer (g, cr.reduced (2.0f)); }
+                else capsule (g, cr, 0.0f, on ? acc (side) : white, on ? 0.95f : (i == hover ? 0.5f : 0.22f));
+                const Colour line = hard ? bk::ink : (on ? white : white.withAlpha (0.5f));
+                const Colour hot = on ? acc (side) : line;
+                const auto c = cr.getCentre().translated (on && hard ? 1.0f : 0.0f, on && hard ? 1.0f : 0.0f);
+                if (i == 0)      reels (g, c, on ? t : 0.0f, line, hot);
+                else if (i == 1) chip (g, c, t, line, hot, on);
+                else             buckets (g, c, t, line, hot, on);
+            }
+        }
+    };
+
+    // Which scale the Karplus-Strong notes are tuned to (the same list as Cloudfin). At rest it is
+    // a small cell: a ladder (scala) and how many notes the scale has to the octave. With the mouse
+    // on it, it widens to show the scale's name; click for the list, or scroll through it. Bright
+    // while either side's Karplus switch is on.
+    struct ScaleCell : public Component, public SettableTooltipClient
+    {
+        static constexpr float wSmall = 62.0f, wFull = 214.0f;
+        StringArray names;
+        int value = 0;
+        bool lit = false, menuOpen = false;
+        float wheel = 0.0f, cur = wSmall;
+        float* nodeW = nullptr;         // the cell's node follows its width (hover zone, links)
+        std::unique_ptr<ParameterAttachment> att;
+        explicit ScaleCell (RangedAudioParameter& p)
+        {
+            for (auto& sc : fp::getScales()) names.add (sc.name);
+            att = std::make_unique<ParameterAttachment> (p, [this] (float v) { value = jlimit (0, names.size() - 1, (int) std::lround (v)); repaint(); });
+            att->sendInitialUpdate();
+            setMouseCursor (MouseCursor::PointingHandCursor);
+        }
+        void choose (int i) { att->setValueAsCompleteGesture ((float) jlimit (0, names.size() - 1, i)); }
+        bool hitTest (int x, int) override { return std::abs ((float) x - (float) getWidth() * 0.5f) <= cur * 0.5f; }
+        // once a frame: ease open under the mouse (and while its list is up), closed otherwise
+        void animate()
+        {
+            const float target = (isMouseOver() || menuOpen) ? wFull : wSmall;
+            if (std::abs (target - cur) < 0.01f) return;
+            cur += (target - cur) * 0.24f;
+            if (std::abs (target - cur) < 0.6f) cur = target;
+            if (nodeW != nullptr) *nodeW = cur;
+            repaint();
+        }
+        void mouseDown (const MouseEvent&) override
+        {
+            PopupMenu m;
+            m.setLookAndFeel (&getLookAndFeel());
+            for (int i = 0; i < names.size(); ++i) m.addItem (i + 1, names[i], true, i == value);
+            menuOpen = true;
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMaximumNumColumns (1),
+                             [safe = SafePointer<ScaleCell> (this)] (int r) { if (safe != nullptr) { safe->menuOpen = false; if (r > 0) safe->choose (r - 1); } });
+        }
+        void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+        {
+            wheel += w.deltaY;
+            if (std::abs (wheel) < 0.12f) return;
+            choose (value + (wheel < 0.0f ? 1 : -1));
+            wheel = 0.0f;
+        }
+        void paint (Graphics& g) override
+        {
+            const auto b = getLocalBounds().toFloat();
+            const auto r = Rectangle<float> (std::round (cur) - 10.0f, b.getHeight() - 12.0f).withCentre (b.getCentre());
+            cellFace (g, r, {}, false, isMouseOver(), acc (-1));
+            const float open = (cur - wSmall) / (wFull - wSmall);
+            const auto ink = brick() ? (lit ? bk::ink : bk::sh) : (lit ? white : white.withAlpha (0.55f));
+            if (open > 0.5f)
+            {
+                Graphics::ScopedSaveState ss (g);
+                g.reduceClipRegion (r.reduced (8.0f, 0.0f).toNearestInt());
+                txt (g, names[value].upToFirstOccurrenceOf (" (", false, false).toUpperCase(), b, hud (9.0f, true), ink.withMultipliedAlpha (brick() ? 1.0f : (open - 0.5f) * 2.0f));
+                return;
+            }
+            // the ladder and the number of notes
+            const float a = brick() ? 1.0f : 1.0f - open * 2.0f;
+            const float cx = std::round (b.getCentreX()), cy = std::round (b.getCentreY());
+            g.setColour (ink.withMultipliedAlpha (a));
+            const float lx = cx - 17.0f;
+            g.fillRect (lx, cy - 6.0f, 1.0f, 12.0f); g.fillRect (lx + 8.0f, cy - 6.0f, 1.0f, 12.0f);
+            for (float y : { -4.0f, 0.0f, 4.0f }) g.fillRect (lx, cy + y, 9.0f, 1.0f);
+            txt (g, String ((int) chl::ksScale (value).degrees.size()), Rectangle<float> (26.0f, 14.0f).withCentre ({ cx + 9.0f, cy }), hud (10.0f, true), ink.withMultipliedAlpha (a));
         }
     };
 
@@ -2398,6 +3047,15 @@ namespace
         OwnedArray<Label> labels;
         std::vector<std::tuple<Label*, RangedAudioParameter*, Knob*>> readouts;
         Label* status[2] {};
+        Cell* frzCell[2] {};
+        RangedAudioParameter* timePrm[2] {};
+        std::atomic<float>* ksOn[2] {};
+        std::atomic<float>* ksScaleRaw = nullptr;
+        std::unique_ptr<ScaleCell> scaleCell;
+        OwnedArray<TubeDial> tubeDials;
+        OwnedArray<EngineSeg> engineSegs;
+        Cell* themeCell = nullptr;
+        int shownTheme = -1;
         Node* delayHead[2] {};
         Node* tapeNode[2] {};
         Point<float> focusP { W * 0.5f, H * 0.5f }, pivot { W * 0.5f, H * 0.5f };
@@ -2570,36 +3228,53 @@ namespace
                 auto* nDrv  = knobCell (s, chl::drive, P (92, 312), 0.2f * fl, "Drive", "tube drive", &k);
                 k->mod = &proc.paramNorm[(size_t) s][chl::drive];
                 nDrv->title = "Tube";
-                auto* nTOn  = buttonCell (new Cell ("Tube On", "", s), P (150, 400), 96, chl::tubeOnId (s), "tube distortion on / off", s);
+                auto* tubeOn = new Cell (String::fromUTF8 ("\xe2\x98\x89"), "", s);      // a lit heater; an empty ring when off
+                tubeOn->offText = String::fromUTF8 ("\xe2\x97\x8b"); tubeOn->fontH = 15.0f;
+                auto* nTOn  = buttonCell (tubeOn, P (150, 400), 58, chl::tubeOnId (s), "tube distortion on / off", s);
                 auto* nLD   = lfoCell (s, 2, chl::ldRate, chl::ldDepth, P (96, 492), -0.1f * fl, "Drive");
                 // tube type: I 12AX7 (default), II EL84, III 6L6 with sag, IV starved
-                auto* nTT   = segCell (chl::tubeTypeId (s), { "I", "II", "III", "IV" }, P (218, 446), 128, {}, s);
+                auto* nTT   = node (P (218, 446), 58, 78, 0.12f * fl, true, s);
+                nTT->place (tubeDials.add (new TubeDial (*proc.apvts.getParameter (chl::tubeTypeId (s)), s)), {}, 54, 54)
+                   ->setTooltip ("tube type: one 12AX7, two EL84, three 6L6 with sag, four starved. click for the next, or scroll");
                 link (nDrv, nTT, s);
 
                 // delay
                 auto* nTime = knobCell (s, chl::time, P (82, 634), -0.25f * fl, "Time", "delay time", &k);
                 k->mod = &proc.paramNorm[(size_t) s][chl::time];
                 nTime->title = "Delay"; delayHead[s] = nTime;
-                auto* nType = segCell (chl::delayTypeId (s), { "Tape", "PT2399", "BBD" }, P (252, 526), 196,
-                                       "delay engine.  TAPE: an ageing tape loop (hiss, warble, wear; refresh for new tape).  PT2399: the chip, gritty at long times.  BBD: bucket brigade, crunchy and dark at long times", s);
+                auto* nType = node (P (252, 526), 180, 46, 0.0f, false, s);
+                nType->place (engineSegs.add (new EngineSeg (*proc.apvts.getParameter (chl::delayTypeId (s)), s)), {}, 180, 46)
+                     ->setTooltip ("delay engine.  TAPE: an ageing tape loop (hiss, warble, wear; refresh for new tape).  PT2399: the chip, gritty at long times.  BBD: bucket brigade, crunchy and dark at long times");
                 auto* nReg  = knobCell (s, chl::regen, P (188, 654), 0.2f * fl, "Regen", "delay regeneration (past ~90% it self-oscillates)");
                 auto* nMix  = knobCell (s, chl::wet, P (300, 642), -0.3f * fl, "Mix", "delay dry / wet");
-                auto* nSlew = segCell (chl::timeModeId (s), { "Slew", "Fade" }, P (416, 552), 118,
+                auto* nSlew = segCell (chl::timeModeId (s), { String::fromUTF8 ("\xe2\x8c\xa2"), String::fromUTF8 ("\xe2\xa8\xaf") }, P (416, 552), 96,
                                        "time changes.  SLEW: the clock / tape speed glides, so echoes bend in pitch.  FADE: the new time crossfades in, no pitch change", s);
+                // Karplus-Strong time: the delay becomes a string, and the time knob picks its note
+                auto* ksCell = new Cell (String::fromUTF8 ("\xcf\x99"), "", s);     // koppa, the old Greek K: Karplus
+                ksCell->fontH = 16.0f;
+                auto* nKs   = buttonCell (ksCell, P (416, 508), 58, chl::ksId (s),
+                                          "Karplus-Strong time: the delay becomes a tuned string. the time knob picks its note from the scale in the middle; regen is its sustain", s);
+                link (nKs, nSlew, s);
+                static_cast<Seg*> (nSlew->getChildComponent (0))->fontH = 15.0f;
+                timePrm[s] = proc.apvts.getParameter (chl::pid (s, chl::time));
+                ksOn[s] = proc.apvts.getRawParameterValue (chl::ksId (s));
                 auto* nRnd  = knobCell (s, chl::rnd, P (398, 646), 0.22f * fl, "Rand", "random freeze: the chance that the buffer gets held for a while, at random moments");
                 auto* nLT   = lfoCell (s, 1, chl::ltRate, chl::ltDepth, P (112, 752), 0.08f * fl, "Time");
-                auto* nHpf  = buttonCell (new Cell ("HPF", "", s), P (238, 748), 70, chl::hpfId (s), "high pass filter in the delay feedback path", s);
-                auto* nFrz  = buttonCell (new Cell ("Freeze", "", s), P (330, 760), 84, chl::freezeId (s), "freeze the delay buffer (on tape, a held loop slowly disintegrates as the tape wears)", s);
-                status[s] = label (*nFrz, Rectangle<float> (150, 12).withCentre (nFrz->c().translated (0, 28)), hud (8.5f, true), white.withAlpha (0.6f));
+                auto* nHpf  = buttonCell (new Cell (String::fromUTF8 ("\xe2\x8c\x83"), "", s), P (238, 748), 58, chl::hpfId (s), "high pass filter in the delay feedback path", s);
+                // freeze: a crystal, solid while the buffer is held (by hand or by the random freeze), hollow while it runs
+                frzCell[s] = new Cell (String::fromUTF8 ("\xe2\x97\x88"), "", s);
+                frzCell[s]->offText = String::fromUTF8 ("\xe2\x97\x87"); frzCell[s]->fontH = 15.0f;
+                auto* nFrz  = buttonCell (frzCell[s], P (330, 760), 58, chl::freezeId (s), "freeze the delay buffer (on tape, a held loop slowly disintegrates as the tape wears)", s);
                 auto* nTape = node (P (430, 744), 104, 54, 0.0f, false, s);
                 tapeNode[s] = nTape;
-                auto* rf = new Cell ("Refresh", "", s);
+                auto* rf = new Cell (String::fromUTF8 ("\xe2\x86\xbb"), "", s);
+                rf->fontH = 15.0f;
                 rf->setClickingTogglesState (false);
                 rf->onClick = [this, s] { proc.refreshTape[(size_t) s] = true; };
                 rf->setTooltip ("put on a fresh tape: the wear (dropouts, dullness, hiss, warble) goes back to new");
                 cells.add (rf);
-                nTape->place (rf, { 0, -10 }, 100, 32);
-                strips.add (nTape->place (new TapeStrip (proc, s), { 0, 16 }, 96, 24));
+                nTape->place (rf, { -24, 0 }, 54, 32);
+                strips.add (nTape->place (new TapeStrip (proc, s), { 28, 0 }, 42, 42));
 
                 // out
                 auto* nOut  = knobCell (s, chl::out, P (520, 742), 0.25f * fl, "Out", "output level (the cells glow with it: accent, then warm white when hot, red at the top)");
@@ -2618,13 +3293,14 @@ namespace
             auto* nSh = knobCell (chl::lzShapeId, -1, { W * 0.5f + 84, 178 }, 0.2f, "Shape", "beta: reshapes the orbit (thin and twitchy vs. fat and lazy)");
             auto* nDp = knobCell (chl::lzDepthId, -1, { W * 0.5f, 352 }, -0.12f, "Depth", "how far the attractor moves the cutoffs (up to +/- 3.5 octaves)");
             // how the sphere is shown (the picture only: the sound is the same)
-            segCell (chl::viewId, { "Lorenz", "Orrery", "Map", "Radar" }, { W * 0.5f, 70 }, 300, "space view: the attractor alone, or the sphere as a globe, a map or from above", -1);
+            segCell (chl::viewId, { String::fromUTF8 ("\xe2\x88\x9e"), String::fromUTF8 ("\xe2\x98\x89"), String::fromUTF8 ("\xe2\x8a\x9e"), String::fromUTF8 ("\xe2\x97\x8e") }, { W * 0.5f, 70 }, 200, "space view: the attractor alone, or the sphere as a globe, a map or from above", -1);
             if (! proc.desktop())   // the Ambisonic order, top left (where the desktop app has its Listen switch: it listens at 3rd order)
                 segCell (chl::ambiOrderId, { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" }, { 300.0f, 30.0f }, 280,
                          "ambisonic order: 3rd = 16 channels, 5th = 36, 7th = 64. give the track that many and decode at the same order", -1);
+            lastSeg->fontH = 15.0f;
             auto* nSpace = knobCell (chl::spaceId, -1, { W * 0.5f + 100, 640 }, 0.08f, "Distance", "distance: the size of the bubble the echoes fly in, from 1.5 m (close and loud) to 24 m (far, quiet, later)");
             (void) nSpace;
-            auto* nOrd = segCell (chl::orderId, { String::fromUTF8 ("Filter \xe2\x80\xba Dly"), String::fromUTF8 ("Dly \xe2\x80\xba Filter") }, { W * 0.5f, 548 }, 190,
+            auto* nOrd = segCell (chl::orderId, { String::fromUTF8 ("\xcf\x89 \xe2\x80\xba \xcf\x84"), String::fromUTF8 ("\xcf\x84 \xe2\x80\xba \xcf\x89") }, { W * 0.5f, 548 }, 150,
                                   "order: filter > tube > delay, or delay > tube > filter", -1);
             auto* nW  = knobCell (chl::widthId, -1, { W * 0.5f, 636 }, 0.15f, "Width", "poly: fades in up to 7 more delay taps per side, one after another, each at its own offset time. all the way up = 8 taps, a reverb-like cloud. all the way down = off");
             nW->title = "Poly";
@@ -2662,6 +3338,28 @@ namespace
                 nFs->place (fs, {}, 54, 28);
             }
 
+            // the scale the Karplus-Strong notes are tuned to
+            {
+                auto* nScale = node ({ W * 0.5f, 506 }, 214, 32, 0.0f, false, -1);
+                scaleCell = std::make_unique<ScaleCell> (*proc.apvts.getParameter (chl::ksScaleId));
+                nScale->place (scaleCell.get(), {}, 214, 32);
+                nScale->cw = ScaleCell::wSmall;
+                scaleCell->nodeW = &nScale->cw;
+                scaleCell->setTooltip ("the scale the Karplus-Strong notes are tuned to: click for the list, or scroll");
+                ksScaleRaw = proc.apvts.getRawParameterValue (chl::ksScaleId);
+                link (nScale, nOrd, -1);
+            }
+            // the look: the glass HUD, or Brick (the Windows 2000 colour scheme, in hard pixels)
+            {
+                auto* nTheme = node ({ 58, 36 }, 62, 30, 0.0f, false, -1);
+                themeCell = new Cell (String::fromUTF8 ("\xe2\x96\xa6"), "", -1);
+                themeCell->fontH = 14.0f;
+                themeCell->setClickingTogglesState (false);
+                themeCell->setTooltip ("the look: the glass HUD, or Brick (Windows 2000)");
+                themeCell->onClick = [this] { proc.uiTheme.store (proc.uiTheme.load() == 1 ? 0 : 1); };
+                cells.add (themeCell);
+                nTheme->place (themeCell, {}, 60, 28);
+            }
             // reset: every control back to its default (the tape's wear is left alone)
             {
                 auto* nRst = node ({ W - 58, 36 }, 58, 30, 0.0f, false, -1);
@@ -2704,8 +3402,9 @@ namespace
             if (proc.desktop())
             {
                 // the desktop app: how to listen (in a DAW the Ambisonics go to your decoder instead)
-                segCell (chl::listenId, { "Headphones", "Speakers", "16 ch" }, { 300.0f, 30.0f }, 250,
+                segCell (chl::listenId, { String::fromUTF8 ("\xe2\x88\xa9"), String::fromUTF8 ("\xe2\x9f\xa8\xe2\x9f\xa9"), String::fromUTF8 ("\xe2\x81\x99") }, { 300.0f, 30.0f }, 150,
                          "listen: binaural for headphones, a stereo pair for speakers, or the 16 Ambisonics channels for an interface or another app", -1);
+                lastSeg->fontH = 14.0f;
             }
             addChildComponent (help); help.setBounds (getLocalBounds());
             {
@@ -2720,7 +3419,7 @@ namespace
             addChildComponent (sphere); sphere.setBounds (getLocalBounds());
             {
                 auto* nSph = node ({ W - 58, (proc.isStandalone() ? 108.0f : 72.0f) + 38.0f }, 58, 30, 0.0f, false, -1);
-                auto* sb = new Cell (String::fromUTF8 ("â"), "", -1);   // a circle
+                auto* sb = new Cell (String::fromUTF8 ("\xe2\x97\x8b"), "", -1);   // a circle
                 sb->setClickingTogglesState (false);
                 sb->setTooltip ("the sphere: see where everything is, and turn it round");
                 sb->onClick = [this] { sphere.setVisible (! sphere.isVisible()); sphere.toFront (true); };
@@ -2745,7 +3444,27 @@ namespace
         {
             const double t = now();
             ++frame;
-            // the big sphere covers everything: while it's open only it moves (the room behind waits)
+            // the look (kept with the state): everything that caches a picture is drawn again when it changes
+            {
+                const int th = jlimit (0, 1, proc.uiTheme.load());
+                useTheme (th);
+                if (th != shownTheme)
+                {
+                    shownTheme = th;
+                    for (auto* n : nodes) { if (th == 1) n->moveTo ({}); n->repaint(); }
+                    for (int s = 0; s < 2; ++s) if (status[s] != nullptr) status[s]->setText ({}, dontSendNotification);
+                    links.hardImg = {};
+                    callouts.cache.clear();
+                    themeCell->setToggleState (th == 1, dontSendNotification);
+                    bokeh.setVisible (th == 0); grain.setVisible (th == 0);
+                    backdrop.repaint(); title.repaint(); help.repaint();
+                    if (auto* top = getParentComponent()) top->repaint();
+                }
+                const bool anyKs = ksOn[0]->load() > 0.5f || ksOn[1]->load() > 0.5f;
+                if (anyKs != scaleCell->lit) { scaleCell->lit = anyKs; scaleCell->repaint(); }
+                scaleCell->animate();
+                for (auto* es : engineSegs) es->advance (1.0f / 60.0f);
+            }            // the big sphere covers everything: while it's open only it moves (the room behind waits)
             if (sphere.isVisible())
             {
                 sphere.advance (1.0f / 60.0f);
@@ -2844,6 +3563,14 @@ namespace
 
             for (auto* n : nodes)
             {
+                if (brick())      // Brick: flat and still
+                {
+                    n->lift = n->z = n->blurRadius = 0.0f; n->persp = density; n->cache->zoom = 1.0f;
+                    const auto bc = n->getBounds().toFloat().getCentre();
+                    const auto want = AffineTransform::scale (density, density, bc.x, bc.y);
+                    if (n->getTransform() != want) n->moveTo (want);
+                    continue;
+                }
                 const bool held = n == hovered || n->isMouseButtonDown (true);
                 if (dragging && n->isMouseButtonDown (true)) continue;      // pinned under the hand
 
@@ -2860,7 +3587,7 @@ namespace
                 const auto px = project (w0 + Point<float> (1.0f, 0.0f), zl, zx);
                 const auto py = project (w0 + Point<float> (0.0f, 1.0f), zl, zy);
                 // the plane's local perspective at this cell: columns = where one px of x / y goes
-                const float j00 = px.x - p0.x, j10 = px.y - p0.y, j01 = py.x - p0.x, j11 = py.y - p0.y;
+                const float j00 = (px.x - p0.x) * density, j10 = (px.y - p0.y) * density, j01 = (py.x - p0.x) * density, j11 = (py.y - p0.y) * density;
                 const float s = std::sqrt (jmax (0.01f, std::abs (j00 * j11 - j01 * j10)));
                 n->z = z;
                 n->persp = s;
@@ -2904,7 +3631,7 @@ namespace
                     depthOrder = std::move (order);
                 }
             }
-            title.blurRadius = blurFor ({ W * 0.5f, 36.0f });
+            title.blurRadius = brick() ? 0.0f : blurFor ({ W * 0.5f, 36.0f });
             bokeh.parallax = { -par.x * 40.0f, -par.y * 26.0f };
             holo.parallax = { -par.x * 22.0f, -par.y * 14.0f };
             holo.camYaw = yaw; holo.camPitch = pitch;
@@ -2939,20 +3666,22 @@ namespace
             for (auto* st : strips) st->update();
             for (auto& [l, prm, kn] : readouts)
             {
-                const String full = prm->getCurrentValueAsText() + prm->getLabel();
-                const String s = (kn != nullptr && kn->isMouseOverOrDragging() ? full : compactValue (prm->getCurrentValueAsText())).toUpperCase();
+                String full = prm->getCurrentValueAsText() + prm->getLabel(), brief = prm->getCurrentValueAsText();
+                // Karplus-Strong time: the time knob reads as the note it is on
+                for (int sd = 0; sd < 2; ++sd)
+                    if (prm == timePrm[sd] && ksOn[sd]->load() > 0.5f)
+                    {
+                        const double hz = chl::ksNote (proc.paramNorm[(size_t) sd][chl::time].load(), (int) std::lround (ksScaleRaw->load())).hz;
+                        brief = hz < 100.0 ? String (hz, 1) : String (roundToInt (hz));
+                        full = brief + " Hz";
+                    }
+                const String s = (kn != nullptr && kn->isMouseOverOrDragging() ? full : compactValue (brief)).toUpperCase();
                 if (l->getText() != s) l->setText (s, dontSendNotification);
             }
             for (int s = 0; s < 2; ++s)
             {
-                const bool fr = proc.frozen[(size_t) s].load() > 0.5f, rnd = proc.randHeld[(size_t) s].load() > 0.5f;
-                const bool manual = proc.apvts.getRawParameterValue (chl::freezeId (s))->load() > 0.5f;
-                const String txtS = manual ? "BUFFER HELD" : (rnd ? "RANDOM HOLD" : (fr ? "BUFFER HELD" : "BUFFER LIVE"));
-                if (status[s]->getText() != txtS)
-                {
-                    status[s]->setText (txtS, dontSendNotification);
-                    status[s]->setColour (Label::textColourId, fr ? acc (s) : white.withAlpha (0.55f));
-                }
+                const bool fr = proc.frozen[(size_t) s].load() > 0.5f;
+                if (frzCell[s]->held != fr) { frzCell[s]->held = fr; frzCell[s]->repaint(); }
                 const int ty = jlimit (0, 2, (int) std::lround (proc.apvts.getRawParameterValue (chl::delayTypeId (s))->load()));
                 const float ta = ty == 0 ? 1.0f : 0.45f;
                 if (std::abs (tapeNode[s]->getAlpha() - ta) > 0.01f) tapeNode[s]->setAlpha (ta);
@@ -2998,7 +3727,7 @@ ChloaelisEditor::ChloaelisEditor (ChloaelisProcessor& p)
         if (auto* cons = getConstrainer())
             cons->setFixedAspectRatio ((double) designW / (double) designH);
     }
-    setSize (designW, designH);
+    setSize (roundToInt ((float) designW / closeness), roundToInt ((float) designH / closeness));
     gl.setComponentPaintingEnabled (true);
     gl.setContinuousRepainting (false);
     gl.attachTo (*this);
@@ -3104,6 +3833,8 @@ void ChloaelisEditor::showSphereForTest (int mode, float yaw, float pitch)
     sp.setVisible (mode > 0);
     if (mode > 0) { sp.view.mode = mode; sp.view.userYaw = yaw; sp.view.userPitch = pitch; sp.toFront (false); }
 }
+
+void ChloaelisEditor::setDensityForTest (float d) { density = jlimit (0.5f, 2.0f, d); }
 
 void ChloaelisEditor::holdFocusForTest (float y)
 {

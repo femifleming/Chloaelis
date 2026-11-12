@@ -44,6 +44,9 @@ public:
     std::array<std::atomic<float>, chl::numSides> lzOut {};           // what it sends to each cutoff (-1..1, before depth)
     std::array<std::atomic<float>, chl::dsp::Flock::n> flockX {}, flockY {};   // the boids (-1..1), for the display
 
+    std::array<std::atomic<float>, chl::numSides> ksHz {};             // Karplus-Strong: the note each side is on now (Hz)
+    std::atomic<int> uiTheme { 0 };                                    // 0 = the glass HUD, 1 = Brick (Windows 2000)
+
     // written by the UI
     std::array<std::atomic<bool>, chl::numSides> refreshTape {};
 
@@ -87,6 +90,12 @@ private:
     std::atomic<float>* pType[chl::numSides] {};
     std::atomic<float>* pTMode[chl::numSides] {};
     std::atomic<float>* pTubeType[chl::numSides] {};
+    std::atomic<float>* pKs[chl::numSides] {};
+    std::atomic<float>* pKsScale = nullptr;
+    float ksLastNorm[chl::numSides] { -1.0f, -1.0f };
+    int ksLastScale = -1;
+    chl::KsNote ksCur[chl::numSides];
+    float ksTapRatio[chl::numSides][7] {};
     std::atomic<float>* pSrcSel = nullptr, *pSrcLevel = nullptr, *pMasterFb = nullptr, *pFlock = nullptr;
     chl::dsp::Flock flock;
     float flockCur = 0.0f;

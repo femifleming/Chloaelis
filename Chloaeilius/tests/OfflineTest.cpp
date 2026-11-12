@@ -287,6 +287,66 @@ int main (int argc, char** argv)
         }
     }
 
+    // 11. Karplus-Strong time: the string sounds at the pitch asked for (whatever the engine's damping), and rings
+    for (int type : { 0, 1, 2 })
+        for (float hz : { 55.0f, 220.0f, 587.33f, 1760.0f })
+        {
+            ChloeVoice v; v.prepare (sr, 16); v.reset();
+            float p[kNP] = { 0.0f, 20000.0f, 0.15f, 0.0f, 0.0f, 0.33f, 0.97f, 1.0f, 0.0f };
+            ChloeVoice::Flags f; f.type = type; f.tubeOn = false; f.ks = true; f.ksPeriod = 1.0f / hz;
+            v.chains[v.active].start (0, type, false, f.ksPeriod, true); v.chains[v.active].inGain = 1.0f;   // begin already as a string
+            std::vector<float> o; float buf[16]; juce::Random r (5); bool finite = true;
+            for (int blk = 0; blk < (int) sr * 2 / 16; ++blk)
+            {
+                for (int i = 0; i < 16; ++i) buf[i] = blk < 12 ? r.nextFloat() - 0.5f : 0.0f;   // a pluck
+                v.process (buf, 16, p, p, f);
+                for (int i = 0; i < 16; ++i) finite &= std::isfinite (buf[i]);
+                o.insert (o.end(), buf, buf + 16);
+            }
+            // the fundamental's frequency: the peak of a windowed transform scanned round the note
+            const size_t a = (size_t) (sr * 0.05), n = (size_t) (sr * 0.5);
+            auto mag = [&] (double cents)
+            {
+                const double w0 = 2.0 * M_PI * hz * std::exp2 (cents / 1200.0) / sr;
+                double re = 0, im = 0;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    const double wnd = 0.5 - 0.5 * std::cos (2.0 * M_PI * (double) i / (double) n);
+                    re += o[a + i] * wnd * std::cos (w0 * (double) i); im += o[a + i] * wnd * std::sin (w0 * (double) i);
+                }
+                return std::sqrt (re * re + im * im);
+            };
+            double bc = -15.0, bv = -1.0;
+            for (double c = -15.0; c <= 15.0; c += 0.5) { const double m = mag (c); if (m > bv) { bv = m; bc = c; } }
+            const double y0 = mag (bc - 0.5), y2 = mag (bc + 0.5);
+            const double cents = bc + 0.25 * (y0 - y2) / (y0 - 2.0 * bv + y2);
+            const double ring = rms (o, (size_t) (sr * 0.2), (size_t) (sr * 0.3));
+            char msg[160]; std::snprintf (msg, sizeof msg, "karplus %s %.0f Hz: %+.2f cents, ringing %.4f", typeName (type), hz, cents, ring);
+            check (finite && std::abs (cents) < 2.0 && ring > 0.002, msg);
+        }
+
+    // 12. tape hiss fades in when the tape is switched to, and out when it is left (no step either way)
+    {
+        ChloeVoice v; v.prepare (sr, 16); v.reset();
+        float p[kNP] = { 0.0f, 20000.0f, 0.15f, 0.0f, 0.0f, 0.33f, 0.4f, 1.0f, 0.0f };
+        ChloeVoice::Flags f; f.type = 1; f.tubeOn = false;
+        std::vector<float> o; float buf[16];
+        auto run = [&] (double sec) { for (int blk = 0; blk < (int) (sr * sec) / 16; ++blk) { for (auto& b : buf) b = 0.0f; v.process (buf, 16, p, p, f); o.insert (o.end(), buf, buf + 16); } };
+        run (0.5);
+        f.type = 0; const size_t t0 = o.size(); run (4.0);
+        f.type = 1; const size_t t1 = o.size(); run (4.0);
+        const size_t w = (size_t) (sr * 0.05);
+        const double floorPt = rms (o, t0 - w * 4, t0);
+        const double in0 = rms (o, t0, t0 + w), full = rms (o, t0 + (size_t) (sr * 3.0), t1);
+        const double out0 = rms (o, t1, t1 + w), gone = rms (o, t1 + (size_t) (sr * 3.0), o.size());
+        // the biggest jump between neighbouring 20 ms windows, against the full hiss level
+        double jump = 0; const size_t h = (size_t) (sr * 0.02);
+        for (size_t i = t0 - h; i + 2 * h < o.size(); i += h) jump = std::max (jump, std::abs (rms (o, i + h, i + 2 * h) - rms (o, i, i + h)));
+        char msg[200]; std::snprintf (msg, sizeof msg, "tape hiss: PT floor %.6f, first 50 ms %.6f, full %.6f, first 50 ms after leaving %.6f, 3 s later %.6f, biggest 20 ms jump %.6f",
+                                      floorPt, in0, full, out0, gone, jump);
+        check (full > 4.0 * floorPt && in0 < 0.2 * full && out0 > 0.5 * full && gone < 0.3 * full && jump < 0.25 * full, msg);
+    }
+
     std::printf (fails ? "\nOFFLINE TESTS FAILED (%d)\n" : "\nOFFLINE TESTS OK\n", fails);
     return fails;
 }

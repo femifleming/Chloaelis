@@ -520,6 +520,9 @@ namespace chl::dsp
         float wowT = 0, wow1 = 0, wow2 = 0, wowA = 0.0001f, wowTimer = 0, flutPh = 0, flutPh2 = 0, flutInc = 0, flutInc2 = 0, flutAmp = 1;
         float wowDepth = 100, flutDepth = 1;
         float pre = 0, preA = 0.2f, gap1 = 0, gap2 = 0, deemph = 0, hissLP = 0, hissHP = 0, hissA = 0.5f, hissHA = 0.1f, crackle = 0;
+        // the hiss (and crackle) never cuts in or out: it fades up when this tape starts running and
+        // down when the engine is switched away (hissTarget, set by the voice), so a recording has no step
+        float hissGain = 0, hissTarget = 1, hissUp = 0.00002f, hissDown = 0.00002f;
         Biquad bump;
         DCBlock dc;
         juce::Random rng;
@@ -542,6 +545,8 @@ namespace chl::dsp
             preA = onePoleCoef (2400.0f, sr);
             hissA = onePoleCoef (11000.0f, sr);
             hissHA = onePoleCoef (900.0f, sr);
+            hissUp = 1.0f / (1.6f * sr);
+            hissDown = 1.0f / (1.4f * sr);
             bump.peak (95.0f, sr, 0.9f, 2.5f);
             dc.prepare (sr, 8.0f);
             reset();
@@ -551,6 +556,7 @@ namespace chl::dsp
             std::fill (buf.begin(), buf.end(), 0.0f);
             w = 0; dA = dS = dB = dTarget = 0.33f * sr; xf = 1; fading = frozen = false;
             pre = gap1 = gap2 = deemph = hissLP = hissHP = crackle = 0;
+            hissGain = 0;
             bump.reset(); dc.reset();
         }
         void setTime (float sec, bool jump)
@@ -696,14 +702,87 @@ namespace chl::dsp
             const float nz = rng.nextFloat() * 2.0f - 1.0f;
             hissLP += (nz - hissLP) * hissA;
             hissHP += (hissLP - hissHP) * hissHA;
-            y += (hissLP - hissHP) * (0.0018f + 0.008f * wear);
+            hissGain += juce::jlimit (-hissDown, hissUp, hissTarget - hissGain);
+            const float hg = hissGain * hissGain * (3.0f - 2.0f * hissGain);
+            y += (hissLP - hissHP) * (0.0018f + 0.008f * wear) * hg;
 
             // crumbling: the odd crackle of a worn splice
             if (wear > 0.25f && rng.nextFloat() < 0.00003f * wear * wear * (1.0f + 8.0f * dr))
                 crackle = (rng.nextFloat() * 2.0f - 1.0f) * 0.02f * wear;
             crackle *= 0.92f;
-            y += crackle;
+            y += crackle * hg;
             return dc.process (y);
+        }
+    };
+
+    //==========================================================================
+    // Karplus-Strong: a short, clean, exactly tuned line. Inside the delay's regeneration loop it
+    // becomes a plucked / bowed string at the pitch whose period is the delay. The string's damping
+    // is the classic two-point average, blended in by the delay engine (PT2399 bright, tape softer,
+    // BBD dark): its delay is the same at every frequency, so the partials stay harmonic. The line
+    // is shortened by the loop's other delays (and lengthened by the DC blocker's phase lead at the
+    // fundamental), so the pitch is true. Slew glides between notes; fade crossfades to the new note
+    // with no glide. Freeze holds the string.
+    struct KSLine
+    {
+        std::vector<float> buf;
+        int size = 1, w = 0;
+        float sr = 48000.0f, dA = 100, dB = 100, dTarget = 100, slewA = 0.001f, xf = 1, xfStep = 0.001f, lp = 0;
+        float dcLead = 0.0f;
+        static constexpr float damp[3] { 0.5f, 0.25f, 1.0f };     // tape, PT2399, BBD: how much of the two-point average
+        bool fading = false;
+        DCBlock dc;
+
+        void prepare (float s)
+        {
+            sr = s;
+            size = (int) (0.09f * sr) + 16;
+            buf.assign ((size_t) size, 0.0f);
+            slewA = onePoleCoef (11.0f, sr);
+            xfStep = 1.0f / (0.03f * sr);
+            dc.prepare (sr, 1.5f);
+            dcLead = 1.5f / (twoPi * sr);       // the blocker's phase lead at a note of period P is dcLead * P * P samples
+            reset();
+        }
+        void reset() { std::fill (buf.begin(), buf.end(), 0.0f); w = 0; lp = 0; xf = 1; fading = false; dc.reset(); }
+        void setPeriod (float sec, bool jump)
+        {
+            dTarget = juce::jlimit (5.0f, (float) size - 8.0f, sec * sr);
+            if (jump) { dA = dB = dTarget; fading = false; xf = 1; }
+        }
+        inline float readAt (float d) const
+        {
+            float p = (float) w - d;
+            if (p < 0.0f) p += (float) size;
+            const int i = (int) p;
+            const float f = p - (float) i;
+            auto at = [this] (int k) { if (k < 0) k += size; else if (k >= size) k -= size; return buf[(size_t) k]; };
+            const float xm1 = at (i - 1), x0 = at (i), x1 = at (i + 1), x2 = at (i + 2);
+            const float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
+            return ((c3 * f + c2) * f + c1) * f + x0;
+        }
+        // in = input + the loop's feedback; out = the string. (The newest sample in the line is one old,
+        // the feedback arrives a sample later and the damping filter adds its own delay: all taken off.)
+        inline float process (float in, bool freeze, bool fadeMode, int type)
+        {
+            const float d = damp[juce::jlimit (0, 2, type)];
+            auto lineFor = [&] (float period) { return juce::jmax (3.0f, freeze ? period : period - 1.0f - 0.5f * d + dcLead * period * period); };
+            if (! fadeMode) { fading = false; xf = 1; dA += (dTarget - dA) * slewA; }
+            else if (! fading && std::abs (dTarget - dA) > 0.02f) { dB = dTarget; fading = true; xf = 0; }
+            float y = readAt (lineFor (dA));
+            if (fading)
+            {
+                const float yb = readAt (lineFor (dB));
+                xf += xfStep;
+                if (xf >= 1.0f) { xf = 1.0f; dA = dB; fading = false; y = yb; }
+                else y = y * std::cos (xf * pi * 0.5f) + yb * std::sin (xf * pi * 0.5f);
+            }
+            buf[(size_t) w] = freeze ? y : in;      // held: the string goes round on its own, undamped
+            if (++w >= size) w = 0;
+            if (freeze) return y;
+            const float o = y + (lp - y) * (0.5f * d);
+            lp = y;
+            return dc.process (o);
         }
     };
 
@@ -719,6 +798,8 @@ namespace chl::dsp
         PT2399Line pt[2];
         BBDLine bb[2];
         TapeLine tp;
+        KSLine ks;
+        bool ksMode = false;      // Karplus-Strong: timeSec is then the note's period
         int activeType = pt2399, act = 0, waitN = 0;
         float sr = 48000.0f, typeGain = 1, typeStep = 0.001f, xf = 1, xfStep = 0.001f, lineTime[2] { 0.33f, 0.33f };
         bool transition = false;
@@ -733,6 +814,7 @@ namespace chl::dsp
             pt[1].rng.setSeed (seed + 7); bb[1].rng.setSeed (seed + 9);
             pt[0].rng.setSeed (seed + 3); bb[0].rng.setSeed (seed + 5);
             tp.prepare (sr, 1.75f, seed);
+            ks.prepare (sr);
             fbHP.highpass (320.0f, sr, 0.6f);
             typeStep = 1.0f / (0.012f * sr);
             xfStep = 1.0f / (0.05f * sr);
@@ -743,15 +825,18 @@ namespace chl::dsp
             for (auto& l : pt) l.reset();
             for (auto& l : bb) l.reset();
             tp.reset();
+            ks.reset();
             fbHP.reset();
             fb = 0; act = 0; transition = false; xf = 1; waitN = 0;
         }
 
         // begin on this engine at this time, clean (a new chain: no dip, no fill wait)
-        void startAs (int type, float timeSec)
+        void startAs (int type, float timeSec, bool karplus = false)
         {
             reset();
             activeType = type; typeGain = 1.0f;
+            ksMode = karplus;
+            if (ksMode) { ks.setPeriod (timeSec, true); lineTime[0] = lineTime[1] = timeSec; return; }
             for (int i = 0; i < 2; ++i) { pt[i].setTime (timeSec, true); bb[i].setTime (timeSec, true); }
             tp.setTime (timeSec, true);
             lineTime[0] = lineTime[1] = timeSec;
@@ -761,6 +846,7 @@ namespace chl::dsp
         void block (int type, float tapeAge, float dt)
         {
             tp.age = tapeAge;
+            if (ksMode) return;
             if (activeType == tape) tp.wear (dt);
             if (activeType == pt2399 || type == pt2399) { pt[0].updateCoeffs(); pt[1].updateCoeffs(); }
         }
@@ -797,6 +883,16 @@ namespace chl::dsp
 
         inline float process (float x, float timeSec, float regen, bool hpf, bool freeze, bool fadeMode, int type)
         {
+            if (ksMode)
+            {
+                // the regen knob is the string's sustain: most of its travel is long rings, the top
+                // (past 100%) sings on its own
+                ks.setPeriod (timeSec, false);
+                const float y = ks.process (x + fb, freeze, fadeMode, type);
+                const float f = hpf ? fbHP.process (y) : y;
+                fb = freeze ? 0.0f : fastTanh (f) * regen;
+                return y;
+            }
             if (type != activeType)
             {
                 typeGain -= typeStep;
@@ -940,6 +1036,12 @@ namespace chl::dsp
         struct Flags
         {
             bool hpf = false, freeze = false, tubeOn = true, fade = false;
+            // Karplus-Strong time: the delay becomes a string. ksPeriod = the note's period (seconds),
+            // ksTap = each poly tap's period
+            // as a multiple of the main one (other degrees of the scale: the taps make a chord)
+            bool ks = false;
+            float ksPeriod = 0.004f;
+            float ksTap[7] { 1, 1, 1, 1, 1, 1, 1 };
             int type = DelayCell::pt2399, order = 0, tubeType = 0;
             float width0 = 0, width1 = 0;     // copy level / offset at chunk start / end
             float tapMod[7] { 1, 1, 1, 1, 1, 1, 1 };   // per-tap time multipliers from the flock
@@ -965,7 +1067,7 @@ namespace chl::dsp
             DelayCell delay, copies[numCopies];
             bool copyRunning[numCopies] {};
             int order = 0, type = DelayCell::pt2399;     // the setup this chain was built with
-            bool fade = false, alive = false;
+            bool fade = false, alive = false, ks = false;
             float inGain = 0, outGain = 1, outTarget = 1, env = 0, quiet = 0, age = 0;
             float wetLevel = 0;
 
@@ -977,12 +1079,12 @@ namespace chl::dsp
                 for (int k = 0; k < numCopies; ++k) copies[k].prepare (sr, 5000 + seed * 31 + k * 101);
             }
             void reset() { filter.reset(); tube.reset(); delay.reset(); for (auto& c : copies) c.reset(); for (auto& r : copyRunning) r = false; }
-            void start (int ord, int ty, bool fd, float timeSec)
+            void start (int ord, int ty, bool fd, float timeSec, bool karplus = false)
             {
                 reset();
-                order = ord; type = ty; fade = fd;
-                delay.startAs (ty, timeSec);
-                for (auto& c : copies) c.startAs (ty, timeSec);
+                order = ord; type = ty; fade = fd; ks = karplus;
+                delay.startAs (ty, timeSec, ks);
+                for (auto& c : copies) c.startAs (ty, timeSec, ks);
                 alive = true; inGain = 0; outGain = outTarget = 1; env = quiet = age = 0;
             }
         };
@@ -1030,20 +1132,21 @@ namespace chl::dsp
             // a new setup asked for: build it on the spare chain (once that one is free)
             {
                 auto& a = chains[active];
-                if (! chains[active].alive) { a.start (f.order, f.type, f.fade, p0[vTime]); a.inGain = 1.0f; }
-                else if (f.order != a.order || f.type != a.type || f.fade != a.fade)
+                const float t0 = f.ks ? f.ksPeriod : p0[vTime];
+                if (! chains[active].alive) { a.start (f.order, f.type, f.fade, t0, f.ks); a.inGain = 1.0f; }
+                else if (f.order != a.order || f.type != a.type || f.fade != a.fade || f.ks != a.ks)
                 {
                     auto& spare = chains[1 - active];
                     if (! spare.alive)
                     {
-                        spare.start (f.order, f.type, f.fade, p0[vTime]);
+                        spare.start (f.order, f.type, f.fade, t0, f.ks);
                         active = 1 - active;
                     }
                     else spare.outTarget = 0.0f;      // still ringing from an earlier switch: hurry it out
                 }
             }
 
-            if (f.type == DelayCell::tape) tapeAge = juce::jmin (1.0f, tapeAge + dt / tapeLifeSec);
+            if (f.type == DelayCell::tape && ! f.ks) tapeAge = juce::jmin (1.0f, tapeAge + dt / tapeLifeSec);
 
             // input level
             for (int i = 0; i < n; ++i)
@@ -1059,6 +1162,9 @@ namespace chl::dsp
                 auto& ch = chains[c];
                 if (! ch.alive) continue;
                 const bool isActive = c == active;
+                // tape hiss: up while this is the running chain, down once it has been switched away from
+                ch.delay.tp.hissTarget = isActive ? 1.0f : 0.0f;
+                for (auto& cp : ch.copies) cp.tp.hissTarget = ch.delay.tp.hissTarget;
                 const float in0 = ch.inGain;
                 ch.inGain = juce::jlimit (0.0f, 1.0f, ch.inGain + (isActive ? inStep : -inStep));
                 // ringing out: retire once quiet for 0.3 s; after 12 s (e.g. frozen) fade it away
@@ -1108,7 +1214,7 @@ namespace chl::dsp
             for (int k = 0; k < numCopies; ++k)
             {
                 tapOn[k] = tapLevel (k, f.width0) > 0.0005f || tapLevel (k, f.width1) > 0.0005f;
-                if (tapOn[k] && ! ch.copyRunning[k]) ch.copies[k].startAs (ch.type, lerp (vTime, 0));
+                if (tapOn[k] && ! ch.copyRunning[k]) ch.copies[k].startAs (ch.type, ch.ks ? f.ksPeriod * f.ksTap[k] : lerp (vTime, 0), ch.ks);
                 ch.copyRunning[k] = tapOn[k];
                 if (tapOn[k]) { ch.copies[k].block (ch.type, tapeAge, dt); copyOn = true; }
             }
@@ -1117,12 +1223,17 @@ namespace chl::dsp
                 for (int i = 0; i < n; ++i)
                     x[i] = ch.filter.process (x[i], lerp (vCut, i), lerp (vRes, i), lerp (vMorph, i));
             };
+            // the string's sustain: most of the regen knob's travel is long rings; past 100% it sings on its own
+            auto ksRegen = [] (float r) { return r < 1.0f ? std::pow (juce::jmax (0.0f, r), 0.08f) : r; };
+            const float ksR0 = ksRegen (p0[vRegen]), ksR1 = ksRegen (p1[vRegen]);
             auto runDelay = [&]
             {
                 for (int i = 0; i < n; ++i)
                 {
                     const float dry = x[i];
-                    const float t = lerp (vTime, i), rg = lerp (vRegen, i);
+                    // (a chain built as a string keeps the last note if the switch has since gone off)
+                    const float t = ch.ks ? f.ksPeriod : lerp (vTime, i);
+                    const float rg = ch.ks ? ksR0 + (ksR1 - ksR0) * ((float) (i + 1) * inv) : lerp (vRegen, i);
                     float wetv = ch.delay.process (dry, t, rg, f.hpf, f.freeze, ch.fade, ch.type);
                     if (copyOn)
                     {
@@ -1134,8 +1245,9 @@ namespace chl::dsp
                         {
                             if (! tapOn[k]) continue;
                             const float l = tapLevel (k, wd);
-                            const float tk = (1.0f + (tapFactor (k, copySign > 0) - 1.0f) * juce::jmax (l, 0.001f)) * f.tapMod[k];
-                            const float cw = ch.copies[k].process (dry, t * tk, rg * (0.84f - 0.03f * (float) k), f.hpf, f.freeze, ch.fade, ch.type);
+                            const float tk = ch.ks ? f.ksTap[k]
+                                                   : (1.0f + (tapFactor (k, copySign > 0) - 1.0f) * juce::jmax (l, 0.001f)) * f.tapMod[k];
+                            const float cw = ch.copies[k].process (dry, t * tk, rg * (ch.ks ? 1.0f - 0.0015f * (float) (k + 1) : 0.84f - 0.03f * (float) k), f.hpf, f.freeze, ch.fade, ch.type);
                             sum += cw * l;
                             lv += l;
                         }

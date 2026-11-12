@@ -202,19 +202,19 @@ def build(which, dump, out_pdf):
     css = CSS % dict(accent=accent, accent2=accent2, font=os.path.join(REPO, "Resources/fonts/NunitoBold.ttf"))
     docs = os.path.join(REPO, "docs")
     if not spatial:
-        name, version = "Chloaelis", "1.0.0"
+        name, version = "Chloaelis", "1.1.0"
         tag = "A dual-channel filter, tube and delay instrument with a Lorenz attractor, a flock of boids and two field recordings built in."
         shot = os.path.join(docs, "screenshot.png")
-        about = ("<p>This manual covers Chloaelis 1.0.0, the plug-in (AU, VST3, LV2) and the desktop app. It follows the README, "
+        about = ("<p>This manual covers Chloaelis 1.1.0, the plug-in (AU, VST3, LV2) and the desktop app. It follows the README, "
                  "with the full key to the symbols, a reference for every parameter your DAW can automate, and answers to common problems.</p>")
         body = markdown(main_md, REPO, skip_titles=("Contents",))
         # (the README's opening note about Chloaeilius stays: it says where the spatial version is)
     else:
-        name, version = "Chloaeilius", "0.2.0"
+        name, version = "Chloaeilius", "0.3.0"
         tag = "The spatial audio version of Chloaelis: an Ambisonics encoder (1st to 7th order), its echoes flying round you on the flock and the Lorenz attractor."
         shot = os.path.join(REPO, "Chloaeilius/docs/views/chloaeilius_sphere_globe.png")
         sp_md = open(os.path.join(REPO, "Chloaeilius/README.md")).read()
-        about = ("<p>This manual covers Chloaeilius 0.2.0, the plug-in (AU, VST3, LV2) and the desktop app. Chloaeilius is the same instrument as Chloaelis, "
+        about = ("<p>This manual covers Chloaeilius 0.3.0, the plug-in (AU, VST3, LV2) and the desktop app. Chloaeilius is the same instrument as Chloaelis, "
                  "so after the spatial chapters it carries Chloaelis's own: what it is, the layout, the symbols and how to play it. "
                  "Then a reference for every parameter, and answers to common problems.</p>")
         body = markdown(sp_md, os.path.join(REPO, "Chloaeilius"))

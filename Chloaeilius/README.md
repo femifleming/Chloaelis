@@ -28,16 +28,16 @@ Where the sound goes:
 - **Distance**, after the IEM RoomEncoder: every point has its own propagation delay (so echoes flying towards you or away bend in pitch), 1/r level, a little air absorption and first-order reflections from the walls of a room round you. The **Distance** knob (lambda) is the size of the bubble you're in, from 1.5 m to 24 m: in a small bubble everything is close and loud and the room answers quickly; in a big one everything is far, quieter, later and roomier.
 - With the order on *delay > filter*, the dry sound goes through the tube and filter as before and each tap through its own filter (the taps skip the tube there, so they stay apart).
 
-**Space View**, the switch under the title, shows the sphere four ways (the sound is the same in all of them):
+**Space View**, the switch of four marks at the top (∞ ☉ ⊞ ◎), shows the sphere four ways (the sound is the same in all of them):
 
 | | |
 | --- | --- |
-| **Lorenz**: the attractor alone, as in Chloaelis | ![Lorenz](docs/views/chloaeilius_view_lorenz.png) |
-| **Orrery**: a dotted globe round you, turning slowly and leaning with the cursor; every point flies inside it with its trail, and the loud places glow on its skin | ![Orrery](docs/views/chloaeilius_view_orrery.png) |
-| **Map**: the whole sphere unrolled (a Hammer projection, as the IEM EnergyVisualizer), ahead in the middle, behind at both edges, with the energy as glowing dust | ![Map](docs/views/chloaeilius_view_map.png) |
-| **Radar**: from above, rings in metres out to the bubble's edge, each point on a stalk as tall as it is high, and a ripple wherever an echo lands | ![Radar](docs/views/chloaeilius_view_radar.png) |
+| ∞ **Lorenz**: the attractor alone, as in Chloaelis | ![Lorenz](docs/views/chloaeilius_view_lorenz.png) |
+| ☉ **Orrery**: a dotted globe round you, turning slowly and leaning with the cursor; every point flies inside it with its trail, and the loud places glow on its skin | ![Orrery](docs/views/chloaeilius_view_orrery.png) |
+| ⊞ **Map**: the whole sphere unrolled (a Hammer projection, as the IEM EnergyVisualizer), ahead in the middle, behind at both edges, with the energy as glowing dust | ![Map](docs/views/chloaeilius_view_map.png) |
+| ◎ **Radar**: from above, rings in metres out to the bubble's edge, each point on a stalk as tall as it is high, and a ripple wherever an echo lands | ![Radar](docs/views/chloaeilius_view_radar.png) |
 
-**The sphere button** (the circle under **?** in the top right) opens a big sphere over the whole window, with nothing in the way: drag to turn it, scroll to zoom, double-click to set it straight, and switch between globe, map and radar along the top. Every point is named (L DRY, L ECHO, L1 to L7 for the taps, and the same for R), and the loud places glow on the glass.
+**The sphere button** (the circle under **?** in the top right) opens a big sphere over the whole window, with nothing in the way: drag to turn it, scroll to zoom, double-click to set it straight, and switch between globe (☉), map (⊞) and radar (◎) along the top. Where things are is marked by which half of a disc is lit: ◓ ahead, ◐ left, ◑ right, ◒ behind. Every point is named (L DRY, L ECHO, L1 to L7 for the taps, and the same for R), and the loud places glow on the glass.
 
 ![The sphere](docs/views/chloaeilius_sphere_globe.png)
 
@@ -47,9 +47,9 @@ Where the sound goes:
 
 - **The vessel** (top right): load your own sample. Drop an audio file onto it (WAV, AIFF, FLAC, MP3, M4A, OGG or CAF, up to 10 minutes) or double-click it to choose one. The two rings set the loop, and dragging the glass sets its level. It plays into both sides and its echoes fly round you like everything else.
 - **Listen** (top left), because without a DAW there's nowhere to put a decoder:
-  - **Headphones**: the sphere decoded to binaural (a spherical-head model), on outputs 1 and 2.
-  - **Speakers**: a stereo decode for two loudspeakers.
-  - **16 ch**: the Ambisonics themselves, for a multichannel interface or to route into another app (for example through BlackHole into REAPER and an IEM decoder).
+  - **∩ Headphones**: the sphere decoded to binaural (a spherical-head model), on outputs 1 and 2.
+  - **⟨⟩ Speakers**: a stereo decode for two loudspeakers.
+  - **⁙ 16 ch**: the Ambisonics themselves, for a multichannel interface or to route into another app (for example through BlackHole into REAPER and an IEM decoder).
 - **Options** (the audio device and channels), **fullscreen** (cmd+F, esc to leave) and the help, as in Chloaelis.
 
 The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send the Ambisonics to your decoder. The desktop app works at 3rd order.
@@ -58,7 +58,7 @@ The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send th
 
 ## Build it
 
-Chloaeilius isn't released as a download yet. When it is, its releases will be tagged `chloaeilius-v...` on the [Chloaelis Releases page](https://github.com/femifleming/Chloaelis/releases), separate from Chloaelis's own. For now, build it from this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):
+Ready-made builds for macOS, Windows and Linux are on the [Chloaelis Releases page](https://github.com/femifleming/Chloaelis/releases), tagged `chloaeilius-v...` (separate from Chloaelis's own). To build it yourself, use this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):
 
 ```sh
 git clone --recursive https://github.com/femifleming/Chloaelis.git
@@ -69,7 +69,7 @@ cmake --build build-chloaeilius --config Release --target Chloaeilius_All
 
 It appears in your DAW as **Chloaeilius** under **Chloaelis**. The tests are `ChloaeiliusTest`, `ChloaeiliusSpatialTest` (where the sound lands, every channel against AmbiX, CPU) and `ChloaeiliusHostTest` (`SPACE_SHOTS=<folder>` saves every view of the sphere).
 
-Everything else (the controls, the delay engines, the tube, the help) works as in Chloaelis: see [its README](../README.md#how-to-use-it).
+Everything else works as in Chloaelis, including what came with its version 1.1: Karplus-Strong time (ϙ) tuned to Cloudfin's scales, the tape hiss that fades instead of cutting, symbols in place of every word, and the Brick look (▦). In the sphere, a string's poly taps still each ride their own bird, so a chord is spread round you. See [its README](../README.md#how-to-use-it).
 
 
 ## Human contributions
