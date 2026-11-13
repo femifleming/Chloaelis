@@ -363,3 +363,7 @@ Chloaelis's code was written with Claude Code (Anthropic), working under the dir
 Chloaelis is free software: you can redistribute it and/or modify it under the terms of the
 **GNU Affero General Public License v3** as published by the Free Software Foundation. See
 [LICENSE](LICENSE).
+
+## Request log
+
+Everything that was asked for while this was designed and built is in [REQUESTS.md](REQUESTS.md).
