@@ -101,7 +101,8 @@ Ready-made builds for all three systems are on the
 If you use [Homebrew](https://brew.sh):
 
 ```sh
-brew install --cask femifleming/chloaelis/chloaelis
+brew tap femifleming/tap && brew trust --tap femifleming/tap
+brew install --cask femifleming/tap/chloaelis
 ```
 
 This installs the app into `/Applications` and the Audio Unit and VST3 into
