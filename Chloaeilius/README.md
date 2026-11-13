@@ -1,4 +1,4 @@
-<p align="center"><img src="../docs/icon.png" width="128" alt="Chloaeilius icon"></p>
+<p align="center"><img src="../docs/icon_chloaeilius.png" width="128" alt="Chloaeilius icon"></p>
 
 <h1 align="center">Chloaeilius: the spatial audio version of Chloaelis</h1>
 

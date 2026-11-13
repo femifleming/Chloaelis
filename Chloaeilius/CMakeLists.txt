@@ -38,8 +38,8 @@ juce_add_plugin(Chloaeilius
     PLUGIN_CODE Chsp
     FORMATS ${CHL_FORMATS}
     PRODUCT_NAME "Chloaeilius"
-    ICON_BIG "${CHL_ROOT}/Resources/icon/icon_1024.png"
-    ICON_SMALL "${CHL_ROOT}/Resources/icon/icon_1024.png"
+    ICON_BIG "${CHL_ROOT}/Resources/icon/chloaeilius_1024.png"
+    ICON_SMALL "${CHL_ROOT}/Resources/icon/chloaeilius_1024.png"
     DESCRIPTION "Chloaelis in 3rd-order Ambisonics: filter > tube > delay whose echoes fly round you on a flock and a Lorenz attractor"
     LV2URI "https://github.com/femifleming/Chloaelis/Chloaeilius"
     IS_SYNTH FALSE

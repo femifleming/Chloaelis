@@ -203,3 +203,5 @@ Every request typed while this was being designed and built with Claude Code, in
 
 > S2, F3, P2, when youre done update manuuals, update brick theme with these new params, readme, builds , delete old versions from this computer and push these new versions to github, delete the old versions from github.
 
+
+1. "for every single app and vst on my github, just make the app logo icon extremely minimal, a letter from this font [Septambres Neau] in some color, on some color background, update all the app icons." (New app icons: one Septambres Neau glyph, one colour on one colour.)

@@ -103,7 +103,7 @@ jobs:
           mkdir -p dist/Chloaeilius
           cp -R "$A/VST3/Chloaeilius.vst3" "$A/LV2/Chloaeilius.lv2" dist/Chloaeilius/
           cp "$A/Standalone/Chloaeilius" dist/Chloaeilius/
-          cp Resources/icon/icon_1024.png dist/Chloaeilius/chloaeilius.png
+          cp Resources/icon/chloaeilius_1024.png dist/Chloaeilius/chloaeilius.png
           cp Chloaeilius/README.md LICENSE dist/Chloaeilius/
           tar -czf "dist/${{ matrix.package }}" -C dist Chloaeilius
 
