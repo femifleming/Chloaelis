@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/icon.png" width="128" alt="Chloaelis icon"></p>
 
-<h1 align="center">Chloaelis</h1>
+<h1 align="center">chloaelis</h1>
 
 <p align="center">
 A dual-channel filter, tube and delay instrument with a Lorenz attractor, a flock of boids,<br>
@@ -83,7 +83,7 @@ sides together:
 ## Download and install
 
 Ready-made builds for all three systems are on the
-**[Releases page](https://github.com/femifleming/Chloaelis/releases/latest)**:
+**[Releases page](https://github.com/femifleming/chloaelis/releases/latest)**:
 
 | System  | File                      | Contains                                        |
 |---------|---------------------------|-------------------------------------------------|
@@ -112,7 +112,7 @@ This installs the app into `/Applications` and the Audio Unit and VST3 into
 ### macOS (manual)
 
 1. Download `Chloaelis-macOS.zip` from the
-   [Releases page](https://github.com/femifleming/Chloaelis/releases/latest) and unzip it.
+   [Releases page](https://github.com/femifleming/chloaelis/releases/latest) and unzip it.
 2. Drag **Chloaelis.app** into **Applications**.
 3. For the plug-ins, open Finder, press **⇧⌘G** and go to `~/Library/Audio/Plug-Ins`. Copy
    **Chloaelis.component** into the `Components` folder and **Chloaelis.vst3** into `VST3`
@@ -295,7 +295,7 @@ You need CMake 3.22 or newer and a C++20 compiler (Xcode on macOS, Visual Studio
 Windows, GCC or Clang on Linux).
 
 ```sh
-git clone --recursive https://github.com/femifleming/Chloaelis.git
+git clone --recursive https://github.com/femifleming/chloaelis.git
 cd Chloaelis
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target Chloaelis_All

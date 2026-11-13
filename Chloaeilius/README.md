@@ -1,6 +1,6 @@
 <p align="center"><img src="../docs/icon_chloaeilius.png" width="128" alt="Chloaeilius icon"></p>
 
-<h1 align="center">Chloaeilius: the spatial audio version of Chloaelis</h1>
+<h1 align="center">chloaeilius: the spatial audio version of chloaelis</h1>
 
 > **Spatial audio.** Chloaeilius is the Ambisonics version (1st to 7th order, 3rd by default) of [Chloaelis](../README.md), kept in the Chloaelis repository (this folder). It is an **encoder**: stereo goes in, Ambisonics come out (ACN order, SN3D, the format of the IEM and SPARTA plug-ins: 16 channels at 3rd order, 36 at 5th, 64 at 7th), and it decodes nothing itself. Route all of them to a decoder of the same order. For the ordinary stereo instrument, see [Chloaelis](../README.md).
 
@@ -58,10 +58,10 @@ The plug-ins (AU, VST3, LV2) have no Listen switch: in a DAW they always send th
 
 ## Build it
 
-Ready-made builds for macOS, Windows and Linux are on the [Chloaelis Releases page](https://github.com/femifleming/Chloaelis/releases), tagged `chloaeilius-v...` (separate from Chloaelis's own). To build it yourself, use this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):
+Ready-made builds for macOS, Windows and Linux are on the [Chloaelis Releases page](https://github.com/femifleming/chloaelis/releases), tagged `chloaeilius-v...` (separate from Chloaelis's own). To build it yourself, use this folder (it shares the repository's JUCE, fonts and recordings, so clone the whole thing):
 
 ```sh
-git clone --recursive https://github.com/femifleming/Chloaelis.git
+git clone --recursive https://github.com/femifleming/chloaelis.git
 cd Chloaelis
 cmake -S Chloaeilius -B build-chloaeilius -DCMAKE_BUILD_TYPE=Release -DCHLOAEILIUS_COPY_AFTER_BUILD=ON
 cmake --build build-chloaeilius --config Release --target Chloaeilius_All
