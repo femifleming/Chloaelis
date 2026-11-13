@@ -202,10 +202,10 @@ def build(which, dump, out_pdf):
     css = CSS % dict(accent=accent, accent2=accent2, font=os.path.join(REPO, "Resources/fonts/NunitoBold.ttf"))
     docs = os.path.join(REPO, "docs")
     if not spatial:
-        name, version = "Chloaelis", "1.1.0"
+        name, version = "Chloaelis", "1.1.1"
         tag = "A dual-channel filter, tube and delay instrument with a Lorenz attractor, a flock of boids and two field recordings built in."
         shot = os.path.join(docs, "screenshot.png")
-        about = ("<p>This manual covers Chloaelis 1.1.0, the plug-in (AU, VST3, LV2) and the desktop app. It follows the README, "
+        about = ("<p>This manual covers Chloaelis 1.1.1, the plug-in (AU, VST3, LV2) and the desktop app. It follows the README, "
                  "with the full key to the symbols, a reference for every parameter your DAW can automate, and answers to common problems.</p>")
         body = markdown(main_md, REPO, skip_titles=("Contents",))
         # (the README's opening note about Chloaeilius stays: it says where the spatial version is)
